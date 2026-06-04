@@ -64,7 +64,7 @@ async function init() {
   }
 
   const githubConfig = await db.getConfig('githubConfig');
-  if (githubConfig?.token && githubConfig?.repo) {
+  if (githubConfig?.key) {
     state.githubConfig = githubConfig;
   }
 
@@ -723,10 +723,6 @@ async function githubSync() {
     const remoteTime     = remoteData?.exportedAt ? Date.parse(remoteData.exportedAt) : 0;
 
     if (remoteTime > lastSyncedTime) {
-      const remoteDate = new Date(remoteData.exportedAt).toLocaleString();
-      if (!confirm(`Server has newer data (saved ${remoteDate}).\n\nReplace local data?`)) {
-        btn.textContent = origText; btn.disabled = false; return;
-      }
       await applyBackupData(remoteData);
       [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
         db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),

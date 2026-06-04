@@ -517,17 +517,11 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
   /* Constrain dialogs to the viewport */
   dialog { width: 96vw; }
 
-  /* Settings dialog: explicit height so the scrollable body can flex-grow */
-  .settings-dialog {
-    display: flex;
-    flex-direction: column;
-    height: 90vh;
-    height: 90dvh;
-  }
+  /* Settings dialog body: cap height so the footer stays on screen.
+     ~160px accounts for header + tabs + footer. */
   .settings-dialog .dialog-body {
-    flex: 1 1 0;
-    overflow-y: auto;
-    max-height: none;
+    max-height: calc(90vh - 160px);
+    max-height: calc(90dvh - 160px);
   }
 
   .app-main { padding: 12px; }
