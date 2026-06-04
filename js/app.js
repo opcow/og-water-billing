@@ -2,6 +2,8 @@ import * as db      from './db.js';
 import * as billing from './billing.js';
 import * as ui      from './ui.js';
 
+const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const state = {
@@ -81,8 +83,7 @@ function render() {
   document.getElementById('btn-normalize').hidden     = !hasPeriods;
   document.getElementById('btn-print').hidden         = !hasPeriods;
   document.getElementById('btn-delete-period').hidden = !hasPeriods;
-  document.getElementById('btn-save-backup').hidden   = !hasPeriods;
-  document.getElementById('btn-sync').hidden           = !state.githubConfig?.token;
+  document.getElementById('btn-sync').hidden           = !state.githubConfig?.key;
 
   if (!hasPeriods) return;
 
@@ -176,9 +177,6 @@ function setupEvents() {
 
   // GitHub sync
   document.getElementById('btn-sync').addEventListener('click', githubSync);
-
-  // Mobile one-tap backup download
-  document.getElementById('btn-save-backup').addEventListener('click', exportBackupJSON);
 
   // Period creation dialog
   document.getElementById('close-period-dialog').addEventListener('click', closePeriodDialog);
@@ -443,10 +441,8 @@ async function saveSettings() {
     await db.savePeriod(period);
   }
 
-  const token = document.getElementById('github-token')?.value.trim() || '';
-  const ghRepo = document.getElementById('github-repo')?.value.trim() || '';
-  const ghPath = document.getElementById('github-path')?.value.trim() || 'water-billing.json';
-  const githubConfig = (token && ghRepo) ? { token, repo: ghRepo, path: ghPath } : null;
+  const syncKey = document.getElementById('sync-key')?.value.trim() || '';
+  const githubConfig = syncKey ? { key: syncKey } : null;
   await db.setConfig('githubConfig', githubConfig);
   state.githubConfig = githubConfig;
   document.getElementById('btn-sync').hidden = !githubConfig;
@@ -694,7 +690,7 @@ async function syncToFile() {
 
 async function githubSync() {
   const cfg = state.githubConfig;
-  if (!cfg?.token || !cfg?.repo) return;
+  if (!cfg?.key) return;
 
   const btn = document.getElementById('btn-sync');
   btn.disabled = true;
@@ -702,17 +698,14 @@ async function githubSync() {
   btn.textContent = '⟳';
 
   try {
-    const [owner, repo] = cfg.repo.split('/');
-    const path = cfg.path || 'water-billing.json';
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
     const headers = {
-      'Authorization': `token ${cfg.token}`,
+      'X-Sync-Key': cfg.key,
       'Accept': 'application/vnd.github.v3+json',
     };
 
-    // Fetch remote file (404 = first push, not an error)
+    // Fetch remote file via Worker (404 = first push, not an error)
     let remoteData = null, remoteSha = null;
-    const res = await fetch(apiUrl, { headers });
+    const res = await fetch(SYNC_URL, { headers });
     if (res.ok) {
       const json = await res.json();
       remoteSha = json.sha;
@@ -724,14 +717,14 @@ async function githubSync() {
 
     // Compare remote exportedAt against the last time THIS device synced,
     // not against the current clock (buildBackupData stamps exportedAt = now,
-    // which would always look "newer" than anything already on GitHub).
+    // which would always look "newer" than anything already on the server).
     const lastSynced     = await db.getConfig('lastGithubSync');
     const lastSyncedTime = lastSynced ? Date.parse(lastSynced) : 0;
     const remoteTime     = remoteData?.exportedAt ? Date.parse(remoteData.exportedAt) : 0;
 
     if (remoteTime > lastSyncedTime) {
       const remoteDate = new Date(remoteData.exportedAt).toLocaleString();
-      if (!confirm(`GitHub has newer data (saved ${remoteDate}).\n\nReplace local data?`)) {
+      if (!confirm(`Server has newer data (saved ${remoteDate}).\n\nReplace local data?`)) {
         btn.textContent = origText; btn.disabled = false; return;
       }
       await applyBackupData(remoteData);
@@ -745,9 +738,9 @@ async function githubSync() {
       await db.setConfig('lastGithubSync', remoteData.exportedAt);
     } else {
       const localData = await buildBackupData();
-      // UTF-8-safe base64 for GitHub API
+      // UTF-8-safe base64 for GitHub API (proxied via Worker)
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
-      const putRes = await fetch(apiUrl, {
+      const putRes = await fetch(SYNC_URL, {
         method: 'PUT',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -216,33 +216,19 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null)
 
   const githubSection = `
     <div class="data-section">
-      <h3 class="data-section-title">GitHub Sync</h3>
+      <h3 class="data-section-title">Sync</h3>
       <p class="data-desc" style="margin-bottom:10px">
-        Sync data to a private GitHub repository to share between devices.
-        Needs a Personal Access Token with <code>repo</code> scope.
+        Enter the sync URL and key provided by your administrator.
       </p>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <label style="font-size:13px">Personal Access Token
-          <input type="password" id="github-token"
-                 value="${esc(githubConfig?.token || '')}"
-                 placeholder="ghp_…"
-                 style="width:100%;margin-top:4px;font-family:monospace">
-        </label>
-        <label style="font-size:13px">Repository (owner/repo)
-          <input type="text" id="github-repo"
-                 value="${esc(githubConfig?.repo || '')}"
-                 placeholder="yourname/water-billing-data"
-                 style="width:100%;margin-top:4px">
-        </label>
-        <label style="font-size:13px">File path
-          <input type="text" id="github-path"
-                 value="${esc(githubConfig?.path || 'water-billing.json')}"
-                 placeholder="water-billing.json"
+        <label style="font-size:13px">Sync Key
+          <input type="password" id="sync-key"
+                 value="${esc(githubConfig?.key || '')}"
+                 placeholder="passphrase"
                  style="width:100%;margin-top:4px">
         </label>
       </div>
       <p class="data-desc" style="margin-top:8px;font-size:11px">
-        Create token at github.com → Settings → Developer settings → Personal access tokens.
         Save these settings, then use the ↕ Sync button in the header.
       </p>
     </div>`;

@@ -1,14 +1,14 @@
-const CACHE = 'water-billing-v16';
+const CACHE = 'water-billing-v19';
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './css/styles.css?v=4',
+  './css/styles.css?v=6',
   './js/billing.js',
   './js/db.js',
   './js/ui.js',
-  './js/app.js?v=17',
+  './js/app.js?v=20',
   './js/vendor/xlsx.full.min.js',
   './icons/icon.svg',
 ];

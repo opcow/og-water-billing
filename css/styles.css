@@ -134,6 +134,7 @@ body {
 
 .billing-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   background: var(--surface);
   border-radius: var(--radius);
@@ -164,9 +165,10 @@ body {
 .col-resize-handle:hover { background: rgba(21,101,192,.25); }
 
 .billing-table td {
-  padding: 9px 14px;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+  overflow: hidden;
 }
 
 .billing-table tbody tr:last-child td { border-bottom: none; }
@@ -175,8 +177,11 @@ body {
 .billing-table tfoot tr { background: var(--blue-light); font-weight: 600; }
 
 .num { text-align: right; font-variant-numeric: tabular-nums; }
-.reading-col { width: 110px; }
-.action-col { width: 80px; text-align: center; }
+.col-account { width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reading-col { width: 80px; }
+.col-gal     { width: 72px; }
+.col-amt     { width: 82px; }
+.action-col  { width: 72px; text-align: center; }
 
 /* Inline reading inputs */
 .reading-input {
