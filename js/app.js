@@ -401,7 +401,7 @@ function handleEmailClick(accountId) {
 
   const subject = encodeURIComponent(`Water Bill — ${period.name}`);
   const body    = encodeURIComponent(billing.buildEmailBody(account, reading, period));
-  window.location.href = `mailto:${account.email}?subject=${subject}&body=${body}`;
+  window.open(`mailto:${account.email}?subject=${subject}&body=${body}`);
 }
 
 // ── Send all bills ────────────────────────────────────────────────────────────
