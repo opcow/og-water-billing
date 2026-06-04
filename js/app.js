@@ -273,9 +273,7 @@ let _periodIsFirst = true;
 
 function openPeriodDialog(isFirst) {
   _periodIsFirst = isFirst;
-  document.getElementById('period-start-row').hidden = !isFirst;
-  document.getElementById('period-start-date').value = '';
-  document.getElementById('period-end-date').value   = '';
+  document.getElementById('period-end-date').value = '';
   document.getElementById('period-dialog-title').textContent = isFirst ? 'Create First Sheet' : 'New Sheet';
   document.getElementById('period-dialog').showModal();
 }
@@ -295,10 +293,10 @@ async function confirmPeriod() {
   let period;
 
   if (_periodIsFirst) {
-    const startStr = document.getElementById('period-start-date').value;
-    if (!startStr) { alert('Please enter the start date.'); return; }
-    if (endStr < startStr) { alert('End date must be after start date.'); return; }
     const [y, m, d] = endStr.split('-').map(Number);
+    const prevMonthSameDay = new Date(y, m - 2, d);
+    prevMonthSameDay.setDate(prevMonthSameDay.getDate() + 1);
+    const startStr = dateStr(prevMonthSameDay);
     period = {
       name: new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
       startDate: startStr,
