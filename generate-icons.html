@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Generate Icons</title>
+  <style>
+    body { font-family: sans-serif; padding: 30px; max-width: 500px; }
+    canvas { border: 1px solid #ccc; margin: 10px 0; display: block; }
+    button { padding: 8px 18px; background: #1565C0; color: white; border: none;
+             border-radius: 6px; cursor: pointer; margin: 6px 6px 6px 0; font-size: 14px; }
+    p { color: #555; font-size: 13px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <h2>Generate App Icons</h2>
+  <p>Click the buttons below to download the PNG icons, then place them in the <code>icons/</code> folder.</p>
+
+  <canvas id="c192" width="192" height="192"></canvas>
+  <button onclick="download(192)">Download icon-192.png</button>
+
+  <canvas id="c512" width="512" height="512"></canvas>
+  <button onclick="download(512)">Download icon-512.png</button>
+
+  <script>
+    function drawIcon(size) {
+      const id = `c${size}`;
+      const canvas = document.getElementById(id);
+      const ctx = canvas.getContext('2d');
+      const r = size * 0.18;
+
+      // Background
+      ctx.fillStyle = '#1565C0';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, r);
+      ctx.fill();
+
+      // Water drop
+      const cx = size / 2;
+      const tip = size * 0.18;
+      const bottom = size * 0.77;
+      const wide = size * 0.27;
+      const dropMid = (tip + bottom) / 2 + size * 0.06;
+
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.beginPath();
+      ctx.moveTo(cx, tip);
+      ctx.bezierCurveTo(cx + wide, dropMid, cx + wide, bottom, cx, bottom);
+      ctx.bezierCurveTo(cx - wide, bottom, cx - wide, dropMid, cx, tip);
+      ctx.fill();
+
+      // Shine
+      ctx.strokeStyle = 'rgba(187,222,251,0.85)';
+      ctx.lineWidth = size * 0.025;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, tip + size * 0.1);
+      ctx.bezierCurveTo(cx - wide * 0.5, dropMid - size * 0.05, cx - wide * 0.7, bottom - size * 0.08, cx - wide * 0.25, bottom - size * 0.04);
+      ctx.stroke();
+    }
+
+    drawIcon(192);
+    drawIcon(512);
+
+    function download(size) {
+      const canvas = document.getElementById(`c${size}`);
+      const a = document.createElement('a');
+      a.download = `icon-${size}.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    }
+  </script>
+</body>
+</html>

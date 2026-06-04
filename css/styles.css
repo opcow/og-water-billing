@@ -1,0 +1,579 @@
+/* ── Reset & Base ─────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:       #1565C0;
+  --blue-light: #E3F2FD;
+  --blue-mid:   #BBDEFB;
+  --bg:         #F5F7FA;
+  --surface:    #FFFFFF;
+  --border:     #DDE1E7;
+  --text:       #1A202C;
+  --muted:      #6B7280;
+  --danger:     #DC2626;
+  --radius:     6px;
+  --shadow:     0 1px 4px rgba(0,0,0,.10);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--blue);
+  color: #fff;
+  padding: 10px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
+}
+
+.app-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.period-picker {
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,.4);
+  background: rgba(255,255,255,.15);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+#period-year  { min-width: 70px; }
+#period-month { min-width: 110px; }
+
+.period-picker option { color: var(--text); background: var(--surface); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter .15s;
+  white-space: nowrap;
+}
+.btn:hover { filter: brightness(.92); }
+.btn:active { filter: brightness(.85); }
+
+.btn-primary   { background: #fff; color: var(--blue); }
+.btn-secondary { background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.35); }
+.btn-icon      { background: transparent; color: #fff; font-size: 18px; padding: 4px 8px; line-height: 1; }
+.btn-danger    { background: var(--danger); color: #fff; }
+.btn-delete-period { color: #ffb3b3; border-color: rgba(255,100,100,.4); }
+
+/* Buttons inside white panels */
+.dialog-body .btn,
+.dialog-footer .btn {
+  background: var(--blue);
+  color: #fff;
+}
+.dialog-footer .btn-secondary,
+.dialog-body .btn-secondary {
+  background: #f0f0f0;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.dialog-body .btn-danger { background: var(--danger); color: #fff; }
+
+/* ── Main ────────────────────────────────────────────────────────────────── */
+
+.app-main {
+  padding: 24px 20px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* ── Period dates ────────────────────────────────────────────────────────── */
+
+.period-dates {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.period-dates .normalized-badge {
+  display: inline-block;
+  margin-left: 8px;
+  background: #FFF3CD;
+  color: #856404;
+  border: 1px solid #FFE083;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Billing Table ───────────────────────────────────────────────────────── */
+
+.billing-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.billing-table th {
+  position: relative;
+  background: var(--blue-light);
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--blue-mid);
+}
+
+.col-resize-handle {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 1;
+}
+.col-resize-handle:hover { background: rgba(21,101,192,.25); }
+
+.billing-table td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.billing-table tbody tr:last-child td { border-bottom: none; }
+.billing-table tbody tr:hover { background: #F9FBFF; }
+
+.billing-table tfoot tr { background: var(--blue-light); font-weight: 600; }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.reading-col { width: 110px; }
+.action-col { width: 80px; text-align: center; }
+
+/* Inline reading inputs */
+.reading-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: right;
+  padding: 2px 4px;
+  border-radius: 3px;
+  -moz-appearance: textfield;
+}
+.reading-input::-webkit-inner-spin-button,
+.reading-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.reading-input:focus {
+  outline: 2px solid var(--blue);
+  background: var(--blue-light);
+}
+
+/* ── Column sort ─────────────────────────────────────────────────────────── */
+
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { background: var(--blue-mid); }
+th.sort-asc::after  { content: ' ▲'; font-size: 9px; opacity: .8; }
+th.sort-desc::after { content: ' ▼'; font-size: 9px; opacity: .8; }
+
+/* ── Email button (in-row) ───────────────────────────────────────────────── */
+
+.email-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  background: var(--blue-light);
+  color: var(--blue);
+  border: 1px solid var(--blue-mid);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.email-btn:hover { background: var(--blue-mid); }
+
+/* ── Master Meter section ────────────────────────────────────────────────── */
+
+.master-section {
+  margin-top: 28px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 10px;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.empty-state p { margin-bottom: 16px; font-size: 16px; }
+
+/* ── Dialogs ─────────────────────────────────────────────────────────────── */
+
+dialog {
+  border: none;
+  border-radius: 10px;
+  padding: 0;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  max-width: 620px;
+  width: 92vw;
+}
+dialog::backdrop { background: rgba(0,0,0,.45); }
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.dialog-header h2 { font-size: 16px; }
+.dialog-header .btn-icon { color: var(--muted); font-size: 22px; }
+
+.dialog-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+}
+.tab-btn {
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+.dialog-body {
+  padding: 20px;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: #FAFAFA;
+}
+
+/* ── Settings: rate editor ───────────────────────────────────────────────── */
+
+.form-row {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.form-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.form-row input {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  width: 130px;
+}
+.form-row input:focus { outline: 2px solid var(--blue); border-color: transparent; }
+
+.rate-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.rate-table th {
+  text-align: left;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--border);
+}
+.rate-table td {
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.rate-table input[type="number"],
+.rate-table input[type="text"] {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+}
+.rate-table input:focus { outline: 2px solid var(--blue); border-color: transparent; }
+.rate-table .final-tier { color: var(--muted); font-style: italic; padding: 7px 10px; }
+
+/* ── Settings: accounts editor ───────────────────────────────────────────── */
+
+.account-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.account-row:last-child { border-bottom: none; }
+
+.acc-primary {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.acc-secondary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-left: 28px; /* align under name/holder columns, past the drag handle */
+}
+
+.account-row input[type="text"],
+.account-row input[type="email"],
+.account-row input[type="tel"] {
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  width: 100%;
+}
+.account-row input:focus { outline: 2px solid var(--blue); border-color: transparent; }
+.account-row label.master-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.acc-header {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto auto;
+  gap: 8px;
+  padding: 4px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 4px;
+}
+
+/* ── Drag-and-drop (account reordering) ─────────────────────────────────── */
+
+.drag-handle {
+  display: block;
+  cursor: grab;
+  user-select: none;
+  align-self: center;
+  width: 16px;
+  min-width: 16px;
+  height: 4px;
+  background: #9CA3AF;
+  border-radius: 2px;
+  box-shadow: 0 6px 0 #9CA3AF, 0 12px 0 #9CA3AF;
+}
+.drag-handle:hover,
+.drag-handle:hover { background: #1565C0; box-shadow: 0 6px 0 #1565C0, 0 12px 0 #1565C0; }
+.drag-handle:active { cursor: grabbing; }
+.dragging { opacity: 0.4; }
+.drag-over-top    { box-shadow: 0 -2px 0 var(--blue); }
+.drag-over-bottom { box-shadow: 0  2px 0 var(--blue); }
+
+/* ── Data tab (import / export) ─────────────────────────────────────────── */
+
+.data-section {
+  margin-bottom: 24px;
+}
+.data-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.data-actions { display: flex; flex-direction: column; gap: 8px; }
+.data-action  { display: flex; align-items: center; gap: 12px; }
+.data-desc    { font-size: 12px; color: var(--muted); }
+.data-action .btn { min-width: 210px; text-align: left; flex-shrink: 0; }
+.data-action .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.import-warning {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #991B1B;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.import-preview { margin-top: 14px; }
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.import-table th {
+  background: var(--blue-light);
+  color: var(--blue);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--blue-mid);
+  text-align: left;
+}
+.import-table th.num,
+.import-table td.num { text-align: right; }
+.import-table td { padding: 5px 10px; border-bottom: 1px solid var(--border); }
+.import-table tr.import-changed td { background: #F0FDF4; }
+.import-warn { font-size: 12px; color: var(--danger); margin-top: 4px; }
+
+/* ── Period creation dialog ──────────────────────────────────────────────── */
+
+.period-dialog .dialog-body input[type="date"] {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+/* ── Mobile / desktop visibility ────────────────────────────────────────── */
+
+@media (min-width: 601px) { .no-desktop { display: none !important; } }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .app-header { padding: 8px 12px; gap: 8px; }
+  .app-header h1 { font-size: 15px; }
+  #period-year  { min-width: 58px; font-size: 12px; }
+  #period-month { min-width: 95px; font-size: 12px; }
+
+  /* Hide management buttons — desktop tasks */
+  #btn-new-period,
+  #btn-normalize,
+  #btn-print,
+  #btn-delete-period { display: none !important; }
+
+  /* Constrain dialogs to the viewport */
+  dialog { width: 96vw; }
+
+  /* Settings dialog: explicit height so the scrollable body can flex-grow */
+  .settings-dialog {
+    display: flex;
+    flex-direction: column;
+    height: 90vh;
+    height: 90dvh;
+  }
+  .settings-dialog .dialog-body {
+    flex: 1 1 0;
+    overflow-y: auto;
+    max-height: none;
+  }
+
+  .app-main { padding: 12px; }
+
+  /* Hide non-essential columns */
+  .billing-table .col-start,
+  .billing-table .col-gal,
+  .billing-table .action-col { display: none; }
+
+  /* Prevent iOS tap-zoom (font-size < 16px triggers zoom); larger touch targets */
+  .reading-input { font-size: 16px; }
+  .billing-table td { padding: 10px; }
+  .billing-table td.col-end { padding: 6px 8px; }
+}
+
+/* ── Print ───────────────────────────────────────────────────────────────── */
+
+@media print {
+  .no-print { display: none !important; }
+
+  body { background: white; font-size: 12px; }
+
+  .app-header {
+    background: none;
+    color: black;
+    position: static;
+    box-shadow: none;
+    border-bottom: 2px solid black;
+    padding: 8px 0;
+  }
+  .app-header h1 { font-size: 16px; }
+  .period-picker { display: none; }
+
+  .app-main { padding: 12px 0; max-width: none; }
+
+  .billing-table {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+  .billing-table th {
+    background: #eee;
+    color: black;
+    border-bottom: 1px solid #999;
+  }
+  .billing-table tfoot tr { background: #eee; }
+
+  .reading-input {
+    border: none;
+    text-align: right;
+    font-size: 12px;
+  }
+
+  .master-section { margin-top: 16px; }
+}

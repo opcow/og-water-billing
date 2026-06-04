@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1565C0">
+  <meta name="description" content="Water meter billing tracker">
+  <title>Water Billing</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css?v=4">
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header class="app-header">
+    <div class="header-left">
+      <h1>Water Billing</h1>
+    </div>
+    <div class="header-right no-print">
+      <select id="period-year"  class="period-picker" aria-label="Select year"></select>
+      <select id="period-month" class="period-picker" aria-label="Select month"></select>
+      <button id="btn-new-period" class="btn btn-primary" hidden>+ New Sheet</button>
+      <button id="btn-normalize" class="btn btn-secondary" hidden>Normalize</button>
+      <button id="btn-print" class="btn btn-secondary" hidden>Print</button>
+      <button id="btn-delete-period" class="btn btn-secondary btn-delete-period" hidden title="Delete this billing sheet">Delete Sheet</button>
+      <button id="btn-sync" class="btn btn-secondary" hidden title="Sync with GitHub">↕ Sync</button>
+      <button id="btn-save-backup" class="btn btn-secondary no-desktop" hidden title="Download backup">💾</button>
+      <button id="btn-settings" class="btn btn-icon" aria-label="Settings" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main class="app-main">
+
+    <!-- Empty state -->
+    <div id="empty-state" class="empty-state" hidden>
+      <p>No billing periods yet. Create your first period to get started.</p>
+      <button id="btn-first-period" class="btn btn-primary">Create First Sheet</button>
+    </div>
+
+    <!-- Period view -->
+    <div id="period-view" hidden>
+
+      <p id="period-dates" class="period-dates"></p>
+
+      <table class="billing-table" id="billing-table">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="name">Account</th>
+            <th class="num reading-col col-start">Start Reading</th>
+            <th class="num reading-col col-end">End Reading</th>
+            <th class="num sortable col-gal" data-sort="gallons">Gallons</th>
+            <th class="num sortable col-amt" data-sort="amount">Amount Due</th>
+            <th class="no-print action-col"></th>
+          </tr>
+        </thead>
+        <tbody id="billing-body"></tbody>
+        <tfoot  id="billing-foot"></tfoot>
+      </table>
+
+      <section id="master-section" class="master-section" hidden>
+        <h2 class="section-title">Master Meter</h2>
+        <table class="billing-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th class="num reading-col col-start">Start Reading</th>
+              <th class="num reading-col col-end">End Reading</th>
+              <th class="num col-gal">Gallons</th>
+              <th class="num col-amt">Amount Due</th>
+              <th class="no-print action-col"></th>
+            </tr>
+          </thead>
+          <tbody id="master-body"></tbody>
+        </table>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ── Settings dialog ─────────────────────────────────────────────────── -->
+  <dialog id="settings-dialog" class="settings-dialog">
+    <div class="dialog-header">
+      <h2>Settings</h2>
+      <button id="close-settings" class="btn btn-icon" aria-label="Close">×</button>
+    </div>
+    <div class="dialog-tabs no-print">
+      <button class="tab-btn active" data-tab="rates">Rates</button>
+      <button class="tab-btn" data-tab="accounts">Accounts</button>
+      <button class="tab-btn" data-tab="data">Data</button>
+    </div>
+    <div class="dialog-body">
+
+      <!-- Rates tab -->
+      <div id="tab-rates" class="tab-panel active">
+        <div class="form-row">
+          <label>Base Charge ($)
+            <input type="number" id="base-charge" min="0" step="0.01" style="width:120px">
+          </label>
+          <label>Billing Day of Month
+            <input type="number" id="billing-day" min="1" max="31" style="width:80px">
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;font-size:13px;color:var(--text)">
+          <input type="checkbox" id="lock-start-readings" style="width:auto;margin:0">
+          <label for="lock-start-readings" style="cursor:pointer">Lock start readings (display only)</label>
+        </div>
+        <p style="font-size:12px;color:#6B7280;margin-bottom:10px">
+          Each tier applies to gallons <em>above</em> the previous tier's limit.
+          The final ∞ row covers all remaining usage.
+        </p>
+        <table class="rate-table">
+          <thead>
+            <tr>
+              <th>Up to (gal)</th>
+              <th>Rate ($/unit)</th>
+              <th>Unit (gal)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rate-table-body"></tbody>
+        </table>
+        <button id="btn-add-tier" class="btn btn-secondary" style="margin-top:8px">+ Add Tier</button>
+      </div>
+
+      <!-- Accounts tab -->
+      <div id="tab-accounts" class="tab-panel" hidden>
+        <p style="font-size:12px;color:#6B7280;margin-bottom:12px">
+          Accounts marked as <strong>Master</strong> appear in a separate section and are not included in the sub-account totals.
+        </p>
+        <div id="accounts-editor"></div>
+        <button id="btn-add-account" class="btn btn-secondary" style="margin-top:12px">+ Add Account</button>
+      </div>
+
+      <!-- Data tab -->
+      <div id="tab-data" class="tab-panel" hidden></div>
+
+    </div>
+    <div class="dialog-footer">
+      <button id="btn-cancel-settings" class="btn btn-secondary">Cancel</button>
+      <button id="btn-save-settings"   class="btn btn-primary">Save</button>
+    </div>
+  </dialog>
+
+  <!-- ── Period creation dialog ───────────────────────────────────────────── -->
+  <dialog id="period-dialog" class="period-dialog">
+    <div class="dialog-header">
+      <h2 id="period-dialog-title">Create First Sheet</h2>
+      <button id="close-period-dialog" class="btn btn-icon" aria-label="Close">×</button>
+    </div>
+    <div class="dialog-body">
+      <div id="period-start-row" class="form-row">
+        <label>Start Date
+          <input type="date" id="period-start-date">
+        </label>
+      </div>
+      <div class="form-row">
+        <label>End Date
+          <input type="date" id="period-end-date">
+        </label>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button id="btn-cancel-period"  class="btn btn-secondary">Cancel</button>
+      <button id="btn-confirm-period" class="btn btn-primary">Create</button>
+    </div>
+  </dialog>
+
+  <!-- ── Normalize dialog ────────────────────────────────────────────────────── -->
+  <dialog id="normalize-dialog" class="period-dialog">
+    <div class="dialog-header">
+      <h2>Normalize Readings</h2>
+      <button id="close-normalize-dialog" class="btn btn-icon" aria-label="Close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p style="margin-bottom:14px;font-size:13px;color:var(--muted)">
+        Enter the day this reading was actually taken. Usage will be averaged per day
+        and scaled to the standard billing period length for this month.
+      </p>
+      <div class="form-row">
+        <label>Day reading was taken
+          <input type="number" id="normalize-reading-day" min="1" max="31" style="width:80px">
+        </label>
+      </div>
+      <p id="normalize-info" style="font-size:12px;color:var(--muted);margin-top:4px;min-height:1.4em"></p>
+    </div>
+    <div class="dialog-footer">
+      <button id="btn-cancel-normalize" class="btn btn-secondary">Cancel</button>
+      <button id="btn-confirm-normalize" class="btn btn-primary">Apply</button>
+    </div>
+  </dialog>
+
+  <script src="js/vendor/xlsx.full.min.js"></script>
+  <script type="module" src="js/app.js?v=15"></script>
+</body>
+</html>

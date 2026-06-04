@@ -1,0 +1,140 @@
+export function calcBill(gal, rateTable) {
+  const minCharge = rateTable[0][3] ?? 0;
+  let total = minCharge;
+  let remaining = gal;
+  for (const [bracket, rate, unit] of rateTable) {
+    if (bracket === '-' || remaining <= bracket) {
+      total += (remaining * rate) / unit;
+      break;
+    }
+    total += (bracket * rate) / unit;
+    remaining -= bracket;
+  }
+  // Round to 4 decimal places first to eliminate floating-point noise,
+  // then ceiling to nearest cent (matches Google Sheets ROUNDUP behaviour).
+  return Math.ceil(Math.round(total * 10000) / 100) / 100;
+}
+
+export function getGallons(reading, normFactor) {
+  if (reading.startReading == null || reading.endReading == null) return null;
+  const raw = Math.max(0, reading.endReading - reading.startReading);
+  if (!normFactor || normFactor === 1) return raw;
+  return Math.floor(raw * normFactor / 10) * 10;
+}
+
+export function newPeriod(prevPeriod, accounts, rateTable) {
+  const billingDay = rateTable[0][4] ?? 3;
+  const prevEnd = parseLocalDate(prevPeriod.endDate);
+
+  const startDate = new Date(prevEnd);
+  startDate.setDate(startDate.getDate() + 1);
+
+  const endDate = new Date(prevEnd);
+  endDate.setMonth(endDate.getMonth() + 1);
+  endDate.setDate(billingDay);
+
+  const prevMap = new Map((prevPeriod.readings || []).map(r => [r.accountId, r.endReading]));
+
+  return {
+    name: monthLabel(endDate),
+    startDate: toDateStr(startDate),
+    endDate: toDateStr(endDate),
+    rateTableSnapshot: JSON.parse(JSON.stringify(rateTable)),
+    readings: accounts.map(a => ({
+      accountId: a.id,
+      startReading: prevMap.get(a.id) ?? null,
+      endReading: null,
+    })),
+    normalizationFactor: null,
+  };
+}
+
+export function normalizePeriod(period, readingDay, billingDay) {
+  const [ey, em] = period.endDate.split('-').map(Number);
+  const readingDate   = new Date(ey, em - 1, readingDay);
+  const start         = parseLocalDate(period.startDate);
+  const actualDays    = Math.round((readingDate - start) / 86400000);
+  if (actualDays <= 0) return period;
+
+  // Standard period: billing day of previous month → billing day of current month
+  const expectedEnd   = new Date(ey, em - 1, billingDay);
+  const expectedStart = new Date(ey, em - 2, billingDay);
+  const expectedDays  = Math.round((expectedEnd - expectedStart) / 86400000);
+
+  return { ...period, normalizationFactor: expectedDays / actualDays, readingDay };
+}
+
+export function buildEmailBody(account, reading, period) {
+  const rt = period.rateTableSnapshot;
+  const g = getGallons(reading, period.normalizationFactor);
+  const amount = calcBill(g ?? 0, rt);
+  const minCharge = rt[0][3] ?? 0;
+
+  const greeting = account.accountHolder ? `Dear ${account.accountHolder},` : null;
+
+  const lines = [
+    greeting,
+    greeting ? `` : null,
+    `Water Bill — ${period.name}`,
+    `Period: ${formatDate(period.startDate)} – ${formatDate(period.endDate)}`,
+    period.normalizationFactor && period.normalizationFactor !== 1
+      ? `(Usage normalized)`
+      : null,
+    ``,
+    `Unit/Account: ${account.name}`,
+    account.phone ? `Phone:        ${account.phone}` : null,
+    `Start Reading: ${reading.startReading != null ? formatNumber(reading.startReading) : 'N/A'}`,
+    `End Reading:   ${reading.endReading != null ? formatNumber(reading.endReading) : 'N/A'}`,
+    `Usage:         ${g != null ? formatNumber(g) + ' gallons' : 'N/A'}`,
+    ``,
+    `Rate breakdown:`,
+    `  Base charge: ${formatCurrency(minCharge)}`,
+  ];
+
+  if (g != null && g > 0) {
+    let remaining = g;
+    for (const [bracket, rate, unit] of rt) {
+      const at = bracket === '-' ? remaining : Math.min(remaining, Number(bracket));
+      if (at <= 0) break;
+      const cost = (at * rate) / unit;
+      const label = bracket === '-' ? 'remaining' : `first ${formatNumber(Number(bracket))}`;
+      lines.push(`  ${formatNumber(at)} gal (${label}) × $${rate}/${formatNumber(unit)} = ${formatCurrency(cost)}`);
+      remaining -= at;
+      if (remaining <= 0) break;
+    }
+  }
+
+  lines.push(``, `Total Due: ${formatCurrency(amount)}`);
+  return lines.filter(l => l !== null).join('\n');
+}
+
+export function formatCurrency(n) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+}
+
+export function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export function formatNumber(n) {
+  if (n == null) return '—';
+  return Number(n).toLocaleString('en-US');
+}
+
+function toDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseLocalDate(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function monthLabel(date) {
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
