@@ -165,14 +165,13 @@ function setupEvents() {
 
   // Data tab — export / import / file link (event delegation; tab-data is rendered dynamically)
   document.getElementById('settings-dialog').addEventListener('click', e => {
-    if (e.target.matches('#btn-export-period'))     exportCurrentPeriodXLSX();
-    if (e.target.matches('#btn-export-all'))         exportAllPeriodsXLSX();
-    if (e.target.matches('#btn-export-backup'))      exportBackupJSON();
-    if (e.target.matches('#btn-readings-template'))  downloadReadingsTemplate();
-    if (e.target.matches('#btn-import-readings'))    pickAndImportReadings();
-    if (e.target.matches('#btn-import-backup'))      pickAndRestoreBackup();
-    if (e.target.matches('#btn-link-data-file'))    chooseDataFile();
-    if (e.target.matches('#btn-unlink-data-file'))  unlinkDataFile();
+    if (e.target.matches('#btn-export-period'))       exportCurrentPeriodXLSX();
+    if (e.target.matches('#btn-export-all'))          exportAllPeriodsXLSX();
+    if (e.target.matches('#btn-export-backup'))       exportBackupJSON();
+    if (e.target.matches('#btn-import-period'))       pickAndImportPeriod();
+    if (e.target.matches('#btn-import-backup'))       pickAndRestoreBackup();
+    if (e.target.matches('#btn-link-data-file'))      chooseDataFile();
+    if (e.target.matches('#btn-unlink-data-file'))    unlinkDataFile();
   });
 
   // GitHub sync
@@ -545,227 +544,97 @@ async function exportBackupJSON() {
   downloadFile(JSON.stringify(data, null, 2), `water-billing-backup-${date}.json`, 'application/json');
 }
 
-function downloadReadingsTemplate() {
-  const period = state.currentPeriod;
-  if (!period) return;
-  const XLSX = window.XLSX;
-  const readMap = new Map((period.readings || []).map(r => [r.accountId, r]));
-  const rows = [['Account', 'End Reading']];
-  for (const a of state.accounts.filter(a => !a.isMaster)) {
-    const r = readMap.get(a.id);
-    rows.push([a.name, r?.endReading ?? '']);
-  }
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 20 }, { wch: 14 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Readings');
-  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  downloadFile(buf, `readings-template-${period.name}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-}
-
-async function pickAndImportReadings() {
-  const period = state.currentPeriod;
-  if (!period) return;
+async function pickAndImportPeriod() {
   const file = await pickFile('*/*');
   if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { alert('Invalid file — could not parse JSON.'); return; }
+  if (!data.version || !Array.isArray(data.periods)) {
+    alert('This does not appear to be a valid Water Billing backup.'); return;
+  }
+  showPeriodImportUI(data);
+}
 
-  // Detect JSON backup files picked by mistake
-  const looksLikeJson = file.name.toLowerCase().endsWith('.json') ||
-    await file.slice(0, 10).text().then(t => t.trimStart().startsWith('{')).catch(() => false);
-  if (looksLikeJson) {
-    if (confirm(`"${file.name}" looks like a backup file, not a readings spreadsheet.\n\nRestore it as a full backup instead?`)) {
-      await restoreFromFile(file);
+function showPeriodImportUI(backup) {
+  const el = document.getElementById('import-period-ui');
+  if (!el) return;
+  const exportedDate = backup.exportedAt ? new Date(backup.exportedAt).toLocaleString() : 'unknown date';
+  const periods = [...backup.periods].sort((a, b) => (a.endDate ?? '').localeCompare(b.endDate ?? ''));
+  const opts = periods.map((p, i) => `<option value="${i}">${p.name ?? p.endDate}</option>`).join('');
+  el.innerHTML = `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px">
+      Backup from ${exportedDate} · ${periods.length} period${periods.length !== 1 ? 's' : ''}
+    </p>
+    <select id="import-period-select" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;width:100%;margin-bottom:10px">
+      <option value="__all__">All data — replaces everything</option>
+      ${opts}
+    </select>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button id="btn-confirm-period-import" class="btn btn-primary">Import</button>
+      <button id="btn-cancel-period-import" class="btn btn-secondary">Cancel</button>
+    </div>`;
+  el.hidden = false;
+
+  document.getElementById('btn-confirm-period-import').onclick = async () => {
+    const val = document.getElementById('import-period-select').value;
+    el.hidden = true; el.innerHTML = '';
+    if (val === '__all__') {
+      if (!confirm(`Restore backup from ${exportedDate}?\n\nThis will replace ALL current accounts, periods, and rates.`)) return;
+      await applyBackupData(backup);
+      closeSettings();
+      [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
+        db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
+        db.getConfig('lockStartReadings').then(v => v ?? true),
+      ]);
+      state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
+      state.sortConfig = { column: null, dir: 'asc' };
+      render();
+    } else {
+      await importSinglePeriod(periods[Number(val)], backup.accounts ?? []);
     }
-    return;
-  }
-
-  const XLSX = window.XLSX;
-  let wb;
-  try {
-    const raw = await file.arrayBuffer();
-    // cellDates:false keeps dates as serial numbers rather than Date objects,
-    // avoiding JS Date-related errors from ODS conditional-format metadata.
-    wb = XLSX.read(new Uint8Array(raw), { type: 'array', cellDates: false });
-  } catch (err) {
-    alert(`Could not read the file: ${err.message}`);
-    return;
-  }
-
-  // If multiple sheets, let user pick one
-  let sheetName = wb.SheetNames[0];
-  if (wb.SheetNames.length > 1) {
-    const choice = await pickSheet(wb.SheetNames, period.name);
-    if (!choice) return;
-    sheetName = choice;
-  }
-
-  const parsed = parseReadingSheet(wb.Sheets[sheetName], XLSX);
-  if (!parsed) return;
-  showImportPreview(parsed, period);
-}
-
-// Normalise a cell label: collapse whitespace, lowercase
-function normCell(c) { return String(c ?? '').replace(/\s+/g, ' ').trim().toLowerCase(); }
-
-function parseReadingSheet(ws, XLSX) {
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-  const nonEmpty = rows.filter(r => r.some(c => c !== ''));
-
-  if (nonEmpty.length === 0) {
-    alert('The selected sheet is empty or could not be read.\n\nMake sure the file is saved as XLSX, ODS, or CSV — not as a Numbers (.numbers) or Pages file.');
-    return null;
-  }
-
-  // Find the header row: look for one that has 'start' + 'end', or 'account'/'end reading'
-  let headerIdx = rows.findIndex(r => {
-    const cells = r.map(normCell);
-    return (cells.some(c => c === 'start' || c === 'start reading' || c === 'start meter') &&
-            cells.some(c => c === 'end'   || c === 'end reading'   || c === 'end meter'))
-        || cells.some(c => c === 'account' || c === 'account name');
-  });
-  if (headerIdx < 0) headerIdx = 0;
-
-  const header = rows[headerIdx].map(normCell);
-
-  // Account column: named 'account' or 'account name'; fall back to col 0 if data rows have values there
-  let accCol = header.findIndex(h => h === 'account' || h === 'account name');
-  if (accCol < 0) {
-    const dataRow = rows.slice(headerIdx + 1).find(r => r.some(c => c !== ''));
-    if (dataRow && dataRow[0] !== '') accCol = 0;
-  }
-
-  // Start reading column (optional)
-  let startCol = header.findIndex(h => h === 'start reading' || h === 'start meter' || h === 'start');
-
-  // End reading column
-  let endCol = header.findIndex(h => h === 'end reading' || h === 'end meter');
-  if (endCol < 0) endCol = header.findIndex(h => h === 'end');
-  if (endCol < 0) endCol = header.findIndex(h => h.startsWith('end') && !h.startsWith('end date'));
-  if (endCol < 0) endCol = header.findIndex(h => h.includes('reading') && !h.includes('start'));
-  if (endCol < 0) endCol = header.findIndex(h => h.includes('meter') && !h.includes('start'));
-  // Positional fallback: 2-column file with no recognisable header → col 0 = account, col 1 = reading
-  if (endCol < 0 && accCol === 0 && header.length === 2) endCol = 1;
-
-  if (accCol < 0 || endCol < 0) {
-    const found = header.filter(Boolean).map(h => `"${h}"`).join(', ');
-    alert(
-      `Could not locate the required columns.\n\n` +
-      `Columns found: ${found || '(none detected — the sheet may be in an unreadable format)'}\n\n` +
-      `The file needs at minimum an "Account" column and an "End Reading" column.\n` +
-      `Use Settings → Data → Download Template to get a pre-formatted file.`
-    );
-    return null;
-  }
-
-  const accountMap = new Map(state.accounts.map(a => [a.name.trim().toLowerCase(), a]));
-  const updates = [], unmatched = [];
-
-  for (const row of rows.slice(headerIdx + 1)) {
-    const name = String(row[accCol] ?? '').trim();
-    if (!name) continue;
-    // Skip summary/total rows
-    if (/^(total|master|sum)/i.test(name)) continue;
-
-    const account  = accountMap.get(name.toLowerCase());
-    const endRaw   = row[endCol];
-    const endVal   = endRaw !== '' && endRaw != null ? parseInt(endRaw, 10) : null;
-    const startRaw = startCol >= 0 ? row[startCol] : undefined;
-    const startVal = startRaw !== '' && startRaw != null ? parseInt(startRaw, 10) : undefined;
-
-    if (!account) { unmatched.push(name); continue; }
-    updates.push({ account, endVal, startVal });
-  }
-
-  return { updates, unmatched, hasStart: startCol >= 0 };
-}
-
-function pickSheet(sheetNames, currentPeriodName) {
-  return new Promise(resolve => {
-    const previewEl = document.getElementById('import-preview');
-    if (!previewEl) { resolve(sheetNames[0]); return; }
-
-    // Try to pre-select the sheet matching the current period name
-    const best = sheetNames.find(n => n.toLowerCase() === currentPeriodName.toLowerCase()) ?? sheetNames[0];
-
-    const opts = sheetNames.map(n =>
-      `<option value="${n}"${n === best ? ' selected' : ''}>${n}</option>`
-    ).join('');
-
-    previewEl.innerHTML = `
-      <div class="sheet-picker">
-        <label style="font-weight:600;font-size:13px">This file has multiple sheets. Choose one to import:</label>
-        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-          <select id="sheet-select" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px">${opts}</select>
-          <button id="btn-sheet-ok" class="btn btn-primary">Select</button>
-          <button id="btn-sheet-cancel" class="btn btn-secondary">Cancel</button>
-        </div>
-      </div>`;
-    previewEl.hidden = false;
-
-    document.getElementById('btn-sheet-ok').onclick = () => {
-      const val = document.getElementById('sheet-select').value;
-      previewEl.innerHTML = ''; previewEl.hidden = true;
-      resolve(val);
-    };
-    document.getElementById('btn-sheet-cancel').onclick = () => {
-      previewEl.innerHTML = ''; previewEl.hidden = true;
-      resolve(null);
-    };
-  });
-}
-
-function showImportPreview({ updates, unmatched, hasStart }, period) {
-  const previewEl = document.getElementById('import-preview');
-  if (!previewEl) return;
-  const readMap = new Map((period.readings || []).map(r => [r.accountId, r]));
-
-  const startHdr = hasStart ? '<th>New Start</th>' : '';
-  let html = `<table class="import-table">
-    <thead><tr><th>Account</th><th>Current End</th>${startHdr}<th>New End</th></tr></thead><tbody>`;
-  for (const { account, endVal, startVal } of updates) {
-    const curEnd  = readMap.get(account.id)?.endReading;
-    const changed = endVal !== curEnd;
-    const startTd = hasStart ? `<td class="num">${startVal ?? '—'}</td>` : '';
-    html += `<tr class="${changed ? 'import-changed' : ''}">
-      <td>${account.name}</td>
-      <td class="num">${curEnd ?? '—'}</td>
-      ${startTd}
-      <td class="num">${endVal ?? '—'}</td>
-    </tr>`;
-  }
-  html += '</tbody></table>';
-  if (unmatched.length) {
-    html += `<p class="import-warn">Unmatched rows skipped: ${unmatched.map(n => `<em>${n}</em>`).join(', ')}</p>`;
-  }
-  html += `<div style="margin-top:10px">
-    <button id="btn-confirm-import" class="btn btn-primary">Confirm Import</button>
-    <button id="btn-cancel-import" class="btn btn-secondary" style="margin-left:8px">Cancel</button>
-  </div>`;
-
-  previewEl.innerHTML = html;
-  previewEl.hidden = false;
-
-  document.getElementById('btn-confirm-import').onclick = async () => {
-    for (const { account, endVal, startVal } of updates) {
-      let r = period.readings.find(r => r.accountId === account.id);
-      if (!r) { r = { accountId: account.id, startReading: null, endReading: null }; period.readings.push(r); }
-      r.endReading = endVal;
-      if (startVal !== undefined) r.startReading = startVal;
-    }
-    await db.savePeriod(period);
-    const idx = state.periods.findIndex(p => p.id === period.id);
-    if (idx >= 0) state.periods[idx] = period;
-    previewEl.hidden = true;
-    previewEl.innerHTML = '';
-    closeSettings();
-    ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
   };
-
-  document.getElementById('btn-cancel-import').onclick = () => {
-    previewEl.hidden = true;
-    previewEl.innerHTML = '';
+  document.getElementById('btn-cancel-period-import').onclick = () => {
+    el.hidden = true; el.innerHTML = '';
   };
 }
+
+async function importSinglePeriod(period, backupAccounts) {
+  if (!period) return;
+  // Remap account IDs: match by name against current accounts
+  const nameToId = new Map(state.accounts.map(a => [a.name.toLowerCase().trim(), a.id]));
+  const idToName = new Map([
+    ...(period.accountsSnapshot ?? []).map(a => [a.id, a.name]),
+    ...backupAccounts.map(a => [a.id, a.name]),
+  ]);
+  const remappedReadings = (period.readings ?? []).map(r => {
+    const name = idToName.get(r.accountId);
+    const currentId = name != null ? nameToId.get(name.toLowerCase().trim()) : undefined;
+    return currentId != null ? { ...r, accountId: currentId } : r;
+  });
+  const toImport = { ...period, readings: remappedReadings };
+
+  const existing = state.periods.find(p => p.endDate === period.endDate);
+  if (existing) {
+    if (!confirm(`A period "${existing.name}" already exists. Replace it?`)) return;
+    toImport.id = existing.id;
+  } else {
+    delete toImport.id;
+  }
+
+  const savedId = await db.savePeriod(toImport);
+  const finalPeriod = { ...toImport, id: savedId };
+  if (existing) {
+    state.periods[state.periods.findIndex(p => p.id === existing.id)] = finalPeriod;
+  } else {
+    state.periods.push(finalPeriod);
+    state.periods.sort((a, b) => a.endDate.localeCompare(b.endDate));
+  }
+  state.currentPeriodId = savedId;
+  closeSettings();
+  render();
+  syncToFile();
+}
+
 
 async function restoreFromFile(file) {
   let data;

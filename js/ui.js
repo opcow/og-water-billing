@@ -255,7 +255,7 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null)
           <button id="btn-export-period" class="btn btn-secondary" ${hasPeriod ? '' : 'disabled'}>
             Download Current Period
           </button>
-          <span class="data-desc">Active billing period as XLSX (opens in Excel / LibreOffice)</span>
+          <span class="data-desc">Active billing sheet as XLSX (opens in Excel / LibreOffice)</span>
         </div>
         <div class="data-action">
           <button id="btn-export-all" class="btn btn-secondary">
@@ -273,26 +273,17 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null)
     </div>
 
     <div class="data-section">
-      <h3 class="data-section-title">Import Readings</h3>
+      <h3 class="data-section-title">Import</h3>
       <p class="data-desc" style="margin-bottom:10px">
-        Download the template, fill in end readings in your spreadsheet app, then import it back.
-        Supports ODS, XLSX, XLS, and CSV.
+        Import a single billing sheet from a backup file, or restore everything.
       </p>
       <div class="data-actions">
         <div class="data-action">
-          <button id="btn-readings-template" class="btn btn-secondary" ${hasPeriod ? '' : 'disabled'}>
-            Download Template
-          </button>
-          <span class="data-desc">XLSX template with current period account names pre-filled</span>
-        </div>
-        <div class="data-action">
-          <button id="btn-import-readings" class="btn btn-secondary" ${hasPeriod ? '' : 'disabled'}>
-            Import Readings…
-          </button>
-          <span class="data-desc">Pick an ODS / XLSX / CSV file to import end readings</span>
+          <button id="btn-import-period" class="btn btn-secondary">Import from Backup…</button>
+          <span class="data-desc">Choose a backup JSON, then pick a period or restore all data</span>
         </div>
       </div>
-      <div id="import-preview" class="import-preview" hidden></div>
+      <div id="import-period-ui" style="margin-top:12px" hidden></div>
     </div>
 
     <div class="data-section">
