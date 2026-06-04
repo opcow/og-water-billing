@@ -1,6 +1,6 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key',
 };
 
@@ -36,6 +36,31 @@ export default {
       });
       return new Response(await res.text(), {
         status: res.status,
+        headers: { 'Content-Type': 'application/json', ...CORS },
+      });
+    }
+
+    if (request.method === 'POST') {
+      const { bills } = await request.json();
+      const results = [];
+      for (const bill of bills) {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: env.FROM_EMAIL,
+            to:   [bill.to],
+            subject: bill.subject,
+            text: bill.body,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        results.push({ to: bill.to, name: bill.name, ok: res.ok, error: data.message ?? null });
+      }
+      return new Response(JSON.stringify({ results }), {
         headers: { 'Content-Type': 'application/json', ...CORS },
       });
     }

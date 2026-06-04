@@ -83,7 +83,8 @@ function render() {
   document.getElementById('btn-normalize').hidden     = !hasPeriods;
   document.getElementById('btn-print').hidden         = !hasPeriods;
   document.getElementById('btn-delete-period').hidden = !hasPeriods;
-  document.getElementById('btn-sync').hidden           = !state.githubConfig?.key;
+  document.getElementById('btn-sync').hidden        = !state.githubConfig?.key;
+  document.getElementById('btn-email-bills').hidden = !state.githubConfig?.key || !hasPeriods;
 
   if (!hasPeriods) return;
 
@@ -175,8 +176,9 @@ function setupEvents() {
     if (e.target.matches('#btn-unlink-data-file'))    unlinkDataFile();
   });
 
-  // GitHub sync
+  // GitHub sync and email bills
   document.getElementById('btn-sync').addEventListener('click', githubSync);
+  document.getElementById('btn-email-bills').addEventListener('click', sendAllBills);
 
   // Period creation dialog
   document.getElementById('close-period-dialog').addEventListener('click', closePeriodDialog);
@@ -402,6 +404,59 @@ function handleEmailClick(accountId) {
   window.location.href = `mailto:${account.email}?subject=${subject}&body=${body}`;
 }
 
+// ── Send all bills ────────────────────────────────────────────────────────────
+
+async function sendAllBills() {
+  const cfg = state.githubConfig;
+  if (!cfg?.key || !state.currentPeriod) return;
+
+  const period   = state.currentPeriod;
+  const accounts = accountsFor(period);
+  const eligible = accounts.filter(a => a.email && !a.isMaster);
+
+  if (!eligible.length) {
+    alert('No accounts have email addresses configured.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-email-bills');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '✉ Sending…';
+
+  try {
+    const bills = eligible.map(account => {
+      const reading = period.readings.find(r => r.accountId === account.id)
+        ?? { accountId: account.id, startReading: null, endReading: null };
+      return {
+        to:      account.email,
+        name:    account.name,
+        subject: `Water Bill — ${period.name}`,
+        body:    billing.buildEmailBody(account, reading, period),
+      };
+    });
+
+    const res = await fetch(SYNC_URL, {
+      method: 'POST',
+      headers: { 'X-Sync-Key': cfg.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bills }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const { results } = await res.json();
+    const sent   = results.filter(r => r.ok).length;
+    const failed = results.filter(r => !r.ok);
+
+    btn.textContent = failed.length
+      ? `✉ ${sent} sent, ${failed.length} failed (${failed.map(r => r.name || r.to).join(', ')})`
+      : `✉ ${sent} sent`;
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 5000);
+  } catch (err) {
+    btn.textContent = `✉ Failed: ${err.message}`;
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 4000);
+  }
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 function openSettings() {
@@ -445,7 +500,8 @@ async function saveSettings() {
   const githubConfig = syncKey ? { key: syncKey } : null;
   await db.setConfig('githubConfig', githubConfig);
   state.githubConfig = githubConfig;
-  document.getElementById('btn-sync').hidden = !githubConfig;
+  document.getElementById('btn-sync').hidden        = !githubConfig;
+  document.getElementById('btn-email-bills').hidden = !githubConfig || !state.currentPeriod;
 
   closeSettings();
   render();
