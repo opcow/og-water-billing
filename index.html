@@ -9,6 +9,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css?v=12">
+  <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
 
@@ -18,13 +19,23 @@
       <h1>Water Billing</h1>
     </div>
     <div class="header-right no-print">
-      <select id="period-year"  class="period-picker" aria-label="Select year"></select>
-      <select id="period-month" class="period-picker" aria-label="Select month"></select>
+      <div class="period-picker-wrap">
+        <button id="btn-period-picker" class="btn btn-secondary period-picker-btn">— ▾</button>
+        <div id="period-popover" class="period-popover" hidden>
+          <div class="popover-year-nav">
+            <button id="popover-prev-year">‹</button>
+            <span id="popover-year-label"></span>
+            <button id="popover-next-year">›</button>
+          </div>
+          <div id="popover-month-grid" class="popover-month-grid"></div>
+        </div>
+      </div>
       <button id="btn-new-period" class="btn btn-primary" hidden>+ New Sheet</button>
       <button id="btn-normalize" class="btn btn-secondary" hidden>Normalize</button>
       <button id="btn-print" class="btn btn-secondary" hidden>Print</button>
       <button id="btn-delete-period" class="btn btn-secondary btn-delete-period" hidden title="Delete this billing sheet">Delete Sheet</button>
-      <button id="btn-sync" class="btn btn-secondary" hidden title="Sync with GitHub">↕ Sync</button>
+      <button id="btn-sync" class="btn btn-secondary" hidden title="Sync with GitHub">Sync</button>
+      <button id="btn-theme" class="btn btn-icon" aria-label="Toggle dark mode" title="Toggle dark mode">☀</button>
       <button id="btn-settings" class="btn btn-icon" aria-label="Settings" title="Settings">⚙</button>
     </div>
   </header>
@@ -41,14 +52,20 @@
     <!-- Period view -->
     <div id="period-view" hidden>
 
-      <p id="period-dates" class="period-dates"></p>
+      <div class="period-header">
+        <p id="period-dates" class="period-dates"></p>
+        <div id="undo-toolbar" class="undo-toolbar no-print">
+          <button id="btn-undo" class="btn btn-undo-redo" title="Undo (Ctrl+Z)" disabled>↩</button>
+          <button id="btn-redo" class="btn btn-undo-redo" title="Redo (Ctrl+Y)" disabled>↪</button>
+        </div>
+      </div>
 
       <table class="billing-table" id="billing-table">
         <thead>
           <tr>
             <th class="sortable col-account" data-sort="name">Account</th>
-            <th class="num reading-col col-start">Start</th>
-            <th class="num reading-col col-end">End</th>
+            <th class="reading-col col-start">Prev</th>
+            <th class="reading-col col-end">Reading</th>
             <th class="num sortable col-gal" data-sort="gallons">Gal</th>
             <th class="num sortable col-amt" data-sort="amount">Amount</th>
           </tr>

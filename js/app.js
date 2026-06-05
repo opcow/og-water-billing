@@ -16,12 +16,19 @@ const state = {
   dataFileHandle: null,
   githubConfig: null,
   smsTemplate: null,
+  maxSheets: 60,
   get currentPeriod() {
     return this.periods.find(p => p.id === this.currentPeriodId) ?? null;
   },
 };
 
-let saveTimer = null;
+let saveTimer    = null;
+let smsTapTimer  = null;
+let smsTapTarget = null;
+let popoverYear  = null;
+const undoHistory = [];
+const redoStack   = [];
+let snapshotPending = false;
 
 // Returns the account list appropriate for a given period: the snapshot
 // captured at creation time (preserving historical accuracy) or, for
@@ -34,12 +41,13 @@ function accountsFor(period) {
 
 async function init() {
   await db.seedIfEmpty();
-  [state.periods, state.accounts, state.rateTable, state.lockStartReadings, state.smsTemplate] = await Promise.all([
+  [state.periods, state.accounts, state.rateTable, state.lockStartReadings, state.smsTemplate, state.maxSheets] = await Promise.all([
     db.getPeriods(),
     db.getAccounts(),
     db.getConfig('rateTable'),
     db.getConfig('lockStartReadings').then(v => v ?? true),
     db.getConfig('smsTemplate').then(v => v ?? null),
+    db.getConfig('maxSheets').then(v => v ?? 60),
   ]);
   if (state.periods.length > 0) {
     state.currentPeriodId = state.periods[state.periods.length - 1].id;
@@ -73,6 +81,8 @@ async function init() {
   render();
   setupEvents();
   registerSW();
+  document.getElementById('btn-theme').textContent =
+    document.documentElement.classList.contains('dark') ? '🌙' : '☀';
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -89,25 +99,48 @@ function render() {
 
   if (!hasPeriods) return;
 
-  ui.renderPeriodSelector(state.periods, state.currentPeriodId);
+  ui.renderPeriodPicker(state.periods, state.currentPeriodId);
   ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings);
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
 function setupEvents() {
-  // Period selectors — year rebuilds the month list; month just switches the period
-  document.getElementById('period-year').addEventListener('change', e => {
-    const inYear = state.periods.filter(p => p.endDate.startsWith(e.target.value));
-    if (!inYear.length) return;
-    state.currentPeriodId = inYear[inYear.length - 1].id;
-    ui.renderPeriodSelector(state.periods, state.currentPeriodId);
+  // Period picker popover
+  document.getElementById('btn-period-picker').addEventListener('click', e => {
+    e.stopPropagation();
+    const popover = document.getElementById('period-popover');
+    if (!popover.hidden) { popover.hidden = true; return; }
+    const p = state.currentPeriod;
+    popoverYear = p ? Number(p.endDate.slice(0, 4)) : new Date().getFullYear();
+    ui.renderPeriodPopover(state.periods, state.currentPeriodId, popoverYear);
+    popover.hidden = false;
+  });
+
+  document.getElementById('popover-prev-year').addEventListener('click', e => {
+    e.stopPropagation();
+    popoverYear--;
+    ui.renderPeriodPopover(state.periods, state.currentPeriodId, popoverYear);
+  });
+
+  document.getElementById('popover-next-year').addEventListener('click', e => {
+    e.stopPropagation();
+    popoverYear++;
+    ui.renderPeriodPopover(state.periods, state.currentPeriodId, popoverYear);
+  });
+
+  document.getElementById('popover-month-grid').addEventListener('click', e => {
+    const btn = e.target.closest('.popover-month');
+    if (!btn || !btn.dataset.periodId) return;
+    state.currentPeriodId = Number(btn.dataset.periodId);
+    undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
+    document.getElementById('period-popover').hidden = true;
+    ui.renderPeriodPicker(state.periods, state.currentPeriodId);
     ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings);
   });
 
-  document.getElementById('period-month').addEventListener('change', e => {
-    state.currentPeriodId = Number(e.target.value);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings);
+  document.addEventListener('click', () => {
+    document.getElementById('period-popover').hidden = true;
   });
 
   // Column resize handles
@@ -144,6 +177,9 @@ function setupEvents() {
   // Print
   document.getElementById('btn-print').addEventListener('click', () => window.print());
 
+  // Theme toggle
+  document.getElementById('btn-theme').addEventListener('click', toggleTheme);
+
   // Settings
   document.getElementById('btn-settings').addEventListener('click', openSettings);
   document.getElementById('close-settings').addEventListener('click', closeSettings);
@@ -175,6 +211,7 @@ function setupEvents() {
     if (e.target.matches('#btn-import-backup'))       pickAndRestoreBackup();
     if (e.target.matches('#btn-link-data-file'))      chooseDataFile();
     if (e.target.matches('#btn-unlink-data-file'))    unlinkDataFile();
+    if (e.target.matches('#btn-clear-sms-sent'))      clearSmsSentStatus();
   });
 
   // GitHub sync
@@ -192,11 +229,42 @@ function setupEvents() {
   for (const bodyId of ['billing-body', 'master-body']) {
     document.getElementById(bodyId).addEventListener('input', handleReadingInput);
     document.getElementById(bodyId).addEventListener('keydown', handleReadingKeydown);
+    document.getElementById(bodyId).addEventListener('focusin', e => {
+      if (e.target.matches('.reading-input')) snapshotPending = true;
+    });
   }
 
-  // Amount cell SMS trigger — event delegation on document
+  // Undo / Redo buttons
+  document.getElementById('btn-undo').addEventListener('click', undo);
+  document.getElementById('btn-redo').addEventListener('click', redo);
+
+  // Undo / Redo keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
+  });
+
+  // Amount cell SMS trigger — double-tap required
   document.addEventListener('click', e => {
-    if (e.target.matches('.sms-trigger')) handleTextClick(Number(e.target.dataset.accountId));
+    if (!e.target.matches('.sms-trigger')) return;
+    const accountId = Number(e.target.dataset.accountId);
+    if (smsTapTarget === accountId && smsTapTimer !== null) {
+      clearTimeout(smsTapTimer);
+      smsTapTimer = null;
+      smsTapTarget = null;
+      e.target.classList.remove('sms-armed');
+      handleTextClick(accountId);
+    } else {
+      clearTimeout(smsTapTimer);
+      smsTapTarget = accountId;
+      e.target.classList.add('sms-armed');
+      smsTapTimer = setTimeout(() => {
+        document.querySelector(`.sms-trigger[data-account-id="${smsTapTarget}"]`)
+          ?.classList.remove('sms-armed');
+        smsTapTimer  = null;
+        smsTapTarget = null;
+      }, 400);
+    }
   });
 
   // Remove buttons in settings — event delegation
@@ -216,6 +284,7 @@ function handleReadingInput(e) {
   const val = e.target.value.trim();
   const period = state.currentPeriod;
   if (!period) return;
+  if (snapshotPending) { snapshotReadings(); snapshotPending = false; }
 
   let reading = period.readings.find(r => r.accountId === accountId);
   if (!reading) {
@@ -235,10 +304,7 @@ function handleReadingInput(e) {
 function handleReadingKeydown(e) {
   if (e.key !== 'Enter' || !e.target.matches('.reading-input')) return;
   e.preventDefault();
-  const field = e.target.dataset.field;
-  const all = [...document.querySelectorAll(`.reading-input[data-field="${field}"]`)];
-  const next = all[all.indexOf(e.target) + 1];
-  if (next) { next.focus(); next.select(); }
+  e.target.blur();
 }
 
 async function flushSave(period) {
@@ -246,6 +312,58 @@ async function flushSave(period) {
   const idx = state.periods.findIndex(p => p.id === period.id);
   if (idx >= 0) state.periods[idx] = period;
   syncToFile();
+}
+
+// ── Undo / Redo ───────────────────────────────────────────────────────────────
+
+function snapshotReadings() {
+  const period = state.currentPeriod;
+  if (!period) return;
+  undoHistory.push(JSON.parse(JSON.stringify(period.readings)));
+  if (undoHistory.length > 50) undoHistory.shift();
+  redoStack.length = 0;
+  updateUndoButtons();
+}
+
+function updateUndoButtons() {
+  document.getElementById('btn-undo').disabled = undoHistory.length === 0;
+  document.getElementById('btn-redo').disabled = redoStack.length === 0;
+}
+
+function undo() {
+  const period = state.currentPeriod;
+  if (!period || !undoHistory.length) return;
+  redoStack.push(JSON.parse(JSON.stringify(period.readings)));
+  period.readings = undoHistory.pop();
+  snapshotPending = true;
+  flushSave(period);
+  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
+  updateUndoButtons();
+}
+
+function redo() {
+  const period = state.currentPeriod;
+  if (!period || !redoStack.length) return;
+  undoHistory.push(JSON.parse(JSON.stringify(period.readings)));
+  period.readings = redoStack.pop();
+  snapshotPending = true;
+  flushSave(period);
+  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
+  updateUndoButtons();
+}
+
+// ── Sheet history trim ────────────────────────────────────────────────────────
+
+async function trimOldPeriods() {
+  const max = state.maxSheets ?? 60;
+  if (state.periods.length <= max) return;
+  const toDelete = state.periods.slice(0, state.periods.length - max);
+  await Promise.all(toDelete.map(p => db.deletePeriod(p.id)));
+  state.periods = state.periods.slice(state.periods.length - max);
+  if (!state.periods.find(p => p.id === state.currentPeriodId)) {
+    state.currentPeriodId = state.periods[state.periods.length - 1]?.id ?? null;
+    render();
+  }
 }
 
 // ── New period ────────────────────────────────────────────────────────────────
@@ -324,6 +442,7 @@ async function confirmPeriod() {
   state.currentPeriodId = id;
   closePeriodDialog();
   render();
+  await trimOldPeriods();
   syncToFile();
 }
 
@@ -391,20 +510,45 @@ async function confirmNormalize() {
 
 // ── Text ──────────────────────────────────────────────────────────────────────
 
+function clearSmsSentStatus() {
+  const period = state.currentPeriod;
+  if (!period) return;
+  period.readings.forEach(r => { delete r.smsSentAt; });
+  flushSave(period);
+  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
+}
+
 function handleTextClick(accountId) {
   const account = accountsFor(state.currentPeriod).find(a => a.id === accountId);
   const period  = state.currentPeriod;
   if (!account?.phone || !period) return;
-  const reading = period.readings.find(r => r.accountId === accountId)
-    ?? { accountId, startReading: null, endReading: null };
+
+  let reading = period.readings.find(r => r.accountId === accountId);
+  if (!reading) {
+    reading = { accountId, startReading: null, endReading: null };
+    period.readings.push(reading);
+  }
+
   const body = encodeURIComponent(billing.buildSMSBody(account, reading, period, state.smsTemplate));
+
+  reading.smsSentAt = Date.now();
+  flushSave(period);
+  const amtEl = document.getElementById(`amt-${accountId}`);
+  if (amtEl) amtEl.classList.add('sms-sent');
+
   window.location.href = `sms:${account.phone}&body=${body}`;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+function toggleTheme() {
+  const dark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', dark ? 'dark' : 'light');
+  document.getElementById('btn-theme').textContent = dark ? '🌙' : '☀';
+}
+
 function openSettings() {
-  ui.renderSettings(state.rateTable, state.accounts, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate);
+  ui.renderSettings(state.rateTable, state.accounts, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate, state.maxSheets);
   document.getElementById('settings-dialog').showModal();
 }
 
@@ -427,6 +571,8 @@ async function saveSettings() {
   ]);
   state.smsTemplate = smsTemplate;
   state.lockStartReadings = lockStartReadings;
+  state.maxSheets = result.maxSheets;
+  await db.setConfig('maxSheets', result.maxSheets);
 
   state.rateTable  = rateTable;
   state.accounts   = await db.getAccounts();
@@ -448,6 +594,7 @@ async function saveSettings() {
   state.githubConfig = githubConfig;
   document.getElementById('btn-sync').hidden = !githubConfig;
 
+  await trimOldPeriods();
   closeSettings();
   render();
   syncToFile();

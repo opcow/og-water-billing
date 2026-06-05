@@ -12,30 +12,36 @@ function esc(str) {
 
 // ── Period selector ───────────────────────────────────────────────────────────
 
-export function renderPeriodSelector(periods, selectedId) {
-  if (!periods.length) return;
+export function renderPeriodPicker(periods, selectedId) {
+  const selected = periods.find(p => p.id === selectedId);
+  document.getElementById('btn-period-picker').textContent =
+    (selected ? selected.name : '—') + ' ▾';
+}
 
-  const selected   = periods.find(p => p.id === selectedId);
-  const activeYear = selected ? selected.endDate.slice(0, 4) : periods[periods.length - 1].endDate.slice(0, 4);
-
-  // Group by year
-  const yearMap = new Map();
+export function renderPeriodPopover(periods, selectedId, viewYear) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun',
+                  'Jul','Aug','Sep','Oct','Nov','Dec'];
+  const byMonth = new Map();
   for (const p of periods) {
-    const y = p.endDate.slice(0, 4);
-    if (!yearMap.has(y)) yearMap.set(y, []);
-    yearMap.get(y).push(p);
-  }
-
-  const yearEl = document.getElementById('period-year');
-  yearEl.innerHTML = [...yearMap.keys()].sort().map(y =>
-    `<option value="${y}"${y === activeYear ? ' selected' : ''}>${y}</option>`
-  ).join('');
-
-  const monthEl = document.getElementById('period-month');
-  monthEl.innerHTML = (yearMap.get(activeYear) ?? []).map(p => {
     const [y, m] = p.endDate.split('-');
-    const label  = new Date(+y, +m - 1, 1).toLocaleDateString('en-US', { month: 'long' });
-    return `<option value="${p.id}"${p.id === selectedId ? ' selected' : ''}>${label}</option>`;
+    if (Number(y) === viewYear) byMonth.set(Number(m), p);
+  }
+  const selected = periods.find(p => p.id === selectedId);
+  const selYear  = selected ? Number(selected.endDate.slice(0, 4)) : null;
+  const selMonth = selected ? Number(selected.endDate.slice(5, 7)) : null;
+
+  const years = [...new Set(periods.map(p => Number(p.endDate.slice(0, 4))))].sort();
+  document.getElementById('popover-year-label').textContent = viewYear;
+  document.getElementById('popover-prev-year').disabled = viewYear <= years[0];
+  document.getElementById('popover-next-year').disabled = viewYear >= years[years.length - 1];
+
+  document.getElementById('popover-month-grid').innerHTML = MONTHS.map((label, i) => {
+    const month  = i + 1;
+    const period = byMonth.get(month);
+    const active = viewYear === selYear && month === selMonth;
+    return `<button class="popover-month${active ? ' active' : ''}"
+      data-period-id="${period?.id ?? ''}"
+      ${period ? '' : 'disabled'}>${label}</button>`;
   }).join('');
 }
 
@@ -114,7 +120,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
   const amount = g != null ? calcBill(g, period.rateTableSnapshot) : null;
   const startV = reading?.startReading ?? '';
   const endV   = reading?.endReading ?? '';
-  const amtClass = `num col-amt${account.phone ? ' sms-trigger' : ''}`;
+  const amtClass = `num col-amt${account.phone ? ' sms-trigger' : ''}${reading?.smsSentAt ? ' sms-sent' : ''}`;
   const amtData  = account.phone ? ` data-account-id="${account.id}"` : '';
 
   const startCell = lockStartReadings
@@ -153,7 +159,10 @@ export function updateRow(accountId, period) {
   const galEl  = document.getElementById(`gal-${accountId}`);
   const amtEl  = document.getElementById(`amt-${accountId}`);
   if (galEl) galEl.textContent = g != null ? formatNumber(g) : '—';
-  if (amtEl) amtEl.textContent = amount != null ? formatCurrency(amount) : '—';
+  if (amtEl) {
+    amtEl.textContent = amount != null ? formatCurrency(amount) : '—';
+    amtEl.classList.toggle('sms-sent', !!reading.smsSentAt);
+  }
 }
 
 export function updateTotals(period, accounts) {
@@ -181,7 +190,7 @@ function renderTotals(period, nonMaster, readMap) {
 
 // ── Settings modal ────────────────────────────────────────────────────────────
 
-export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null) {
+export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 60) {
   const baseCharge  = rateTable[0][3] ?? 0;
   const billingDay  = rateTable[0][4] ?? 3;
   const dueDay      = rateTable[0][5] ?? 20;
@@ -192,12 +201,12 @@ export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings
 
   renderRateTiers(rateTable);
   renderAccountsEditor(accounts);
-  renderDataTab(hasPeriod, fileHandle, githubConfig);
-  renderMessagesTab(smsTemplate);
+  renderDataTab(hasPeriod, fileHandle, githubConfig, maxSheets);
+  renderMessagesTab(smsTemplate, hasPeriod);
   switchTab('rates');
 }
 
-export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null) {
+export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null, maxSheets = 60) {
   const hasFileAPI = 'showSaveFilePicker' in window;
   const fileSection = hasFileAPI ? `
     <div class="data-section">
@@ -233,7 +242,21 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null)
       </p>
     </div>`;
 
-  document.getElementById('tab-data').innerHTML = fileSection + githubSection + `
+  const historySection = `
+    <div class="data-section">
+      <h3 class="data-section-title">History</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px">
+        Keep at most
+        <input type="number" id="max-sheets" value="${maxSheets}" min="3" max="120" step="1"
+          style="width:64px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px">
+        months
+      </label>
+      <p class="data-desc" style="margin-top:8px">
+        When a new sheet is created and this limit is exceeded, the oldest sheets are removed automatically. Range: 3–120.
+      </p>
+    </div>`;
+
+  document.getElementById('tab-data').innerHTML = historySection + fileSection + githubSection + `
     <div class="data-section">
       <h3 class="data-section-title">Export</h3>
       <div class="data-actions">
@@ -288,7 +311,7 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null)
     </div>`;
 }
 
-export function renderMessagesTab(template) {
+export function renderMessagesTab(template, hasPeriod = false) {
   document.getElementById('tab-messages').innerHTML = `
     <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
       Customize the SMS message sent when you tap a bill amount. Available placeholders:
@@ -309,7 +332,9 @@ export function renderMessagesTab(template) {
         style="display:block;width:100%;margin-top:6px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:monospace;font-size:13px;resize:vertical;line-height:1.5"
       >${esc(template || DEFAULT_SMS_TEMPLATE)}</textarea>
     </label>
-    <button id="btn-reset-template" class="btn btn-secondary" style="margin-bottom:16px">Reset to default</button>
+    <button id="btn-reset-template" class="btn btn-secondary" style="margin-bottom:8px">Reset to default</button>
+    <button id="btn-clear-sms-sent" class="btn btn-secondary" ${hasPeriod ? '' : 'disabled'}
+      style="margin-bottom:16px">Clear sent status for this sheet</button>
     <p style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Preview</p>
     <pre id="sms-preview" style="font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;white-space:pre-wrap;line-height:1.5;margin:0"></pre>`;
 
@@ -517,5 +542,6 @@ export function collectSettings() {
 
   const lockStartReadings = document.getElementById('lock-start-readings')?.checked ?? false;
   const smsTemplate = document.getElementById('sms-template')?.value.trim() || null;
-  return { rateTable, accounts, lockStartReadings, smsTemplate };
+  const maxSheets = Math.min(120, Math.max(3, parseInt(document.getElementById('max-sheets')?.value, 10) || 60));
+  return { rateTable, accounts, lockStartReadings, smsTemplate, maxSheets };
 }
