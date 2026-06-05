@@ -179,7 +179,7 @@ body {
 
 .app-main {
   padding: 24px 20px;
-  max-width: 820px;
+  max-width: 640px;
   margin: 0 auto;
 }
 
@@ -245,15 +245,15 @@ body {
 }
 
 .billing-table th {
-  position: relative;
   background: var(--blue-light);
   color: var(--blue);
   font-weight: 600;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: .04em;
-  padding: 10px 14px;
+  padding: 10px 10px;
   border-bottom: 2px solid var(--blue-mid);
+  text-align: left;
 }
 
 
@@ -271,10 +271,11 @@ body {
 
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .col-account { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reading-col { width: 90px; }
+.reading-col { width: 108px; }
 th.col-start, th.col-end { text-align: center; }
-.col-gal     { width: 64px; }
-.col-amt     { width: 78px; }
+.col-gal     { width: 84px; }
+.col-amt     { width: 100px; }
+th.col-gal, th.col-amt { text-align: right; }
 
 .sms-trigger { cursor: pointer; }
 .sms-trigger:hover { color: var(--blue); }
