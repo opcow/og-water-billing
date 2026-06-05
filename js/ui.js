@@ -1,4 +1,4 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=2';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

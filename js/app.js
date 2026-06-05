@@ -1,6 +1,6 @@
-import * as db      from './db.js';
-import * as billing from './billing.js';
-import * as ui      from './ui.js';
+import * as db      from './db.js?v=2';
+import * as billing from './billing.js?v=2';
+import * as ui      from './ui.js?v=2';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
