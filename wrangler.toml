@@ -5,11 +5,9 @@ compatibility_date = "2024-01-01"
 [vars]
 GITHUB_REPO = "opcow/gs_billing"
 FILE_PATH = "water-billing.json"
-FROM_EMAIL = "billing@quarklift.com"
 # Secrets — set with:
 #   wrangler secret put GITHUB_TOKEN
 #   wrangler secret put SYNC_KEY
-#   wrangler secret put RESEND_API_KEY
 #   wrangler secret put TWILIO_ACCOUNT_SID
 #   wrangler secret put TWILIO_AUTH_TOKEN
 #   wrangler secret put TWILIO_FROM_NUMBER

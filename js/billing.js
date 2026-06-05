@@ -64,50 +64,6 @@ export function normalizePeriod(period, readingDay, billingDay) {
   return { ...period, normalizationFactor: expectedDays / actualDays, readingDay };
 }
 
-export function buildEmailBody(account, reading, period) {
-  const rt = period.rateTableSnapshot;
-  const g = getGallons(reading, period.normalizationFactor);
-  const amount = calcBill(g ?? 0, rt);
-  const minCharge = rt[0][3] ?? 0;
-
-  const greeting = account.accountHolder ? `Dear ${account.accountHolder},` : null;
-
-  const lines = [
-    greeting,
-    greeting ? `` : null,
-    `Water Bill — ${period.name}`,
-    `Period: ${formatDate(period.startDate)} – ${formatDate(period.endDate)}`,
-    period.normalizationFactor && period.normalizationFactor !== 1
-      ? `(Usage normalized)`
-      : null,
-    ``,
-    `Unit/Account: ${account.name}`,
-    account.phone ? `Phone:        ${account.phone}` : null,
-    `Start Reading: ${reading.startReading != null ? formatNumber(reading.startReading) : 'N/A'}`,
-    `End Reading:   ${reading.endReading != null ? formatNumber(reading.endReading) : 'N/A'}`,
-    `Usage:         ${g != null ? formatNumber(g) + ' gallons' : 'N/A'}`,
-    ``,
-    `Rate breakdown:`,
-    `  Base charge: ${formatCurrency(minCharge)}`,
-  ];
-
-  if (g != null && g > 0) {
-    let remaining = g;
-    for (const [bracket, rate, unit] of rt) {
-      const at = bracket === '-' ? remaining : Math.min(remaining, Number(bracket));
-      if (at <= 0) break;
-      const cost = (at * rate) / unit;
-      const label = bracket === '-' ? 'remaining' : `first ${formatNumber(Number(bracket))}`;
-      lines.push(`  ${formatNumber(at)} gal (${label}) × $${rate}/${formatNumber(unit)} = ${formatCurrency(cost)}`);
-      remaining -= at;
-      if (remaining <= 0) break;
-    }
-  }
-
-  lines.push(``, `Total Due: ${formatCurrency(amount)}`);
-  return lines.filter(l => l !== null).join('\n');
-}
-
 export function buildSMSBody(account, reading, period) {
   const g = getGallons(reading, period.normalizationFactor);
   const amount = calcBill(g ?? 0, period.rateTableSnapshot);

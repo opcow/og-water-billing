@@ -63,28 +63,7 @@ export default {
         });
       }
 
-      const { bills } = body;
-      const results = [];
-      for (const bill of bills) {
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: env.FROM_EMAIL,
-            to:   [bill.to],
-            subject: bill.subject,
-            text: bill.body,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        results.push({ to: bill.to, name: bill.name, ok: res.ok, error: data.message ?? null });
-      }
-      return new Response(JSON.stringify({ results }), {
-        headers: { 'Content-Type': 'application/json', ...CORS },
-      });
+      return new Response('Bad Request', { status: 400, headers: CORS });
     }
 
     return new Response('Method not allowed', { status: 405, headers: CORS });

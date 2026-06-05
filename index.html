@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=10">
+  <link rel="stylesheet" href="css/styles.css?v=11">
 </head>
 <body>
 
@@ -25,8 +25,7 @@
       <button id="btn-print" class="btn btn-secondary" hidden>Print</button>
       <button id="btn-delete-period" class="btn btn-secondary btn-delete-period" hidden title="Delete this billing sheet">Delete Sheet</button>
       <button id="btn-sync" class="btn btn-secondary" hidden title="Sync with GitHub">↕ Sync</button>
-      <button id="btn-email-bills" class="btn btn-secondary" hidden title="Email bills to all accounts">✉ Email Bills</button>
-      <button id="btn-text-bills"  class="btn btn-secondary" hidden title="Text bills to all accounts">💬 Text Bills</button>
+      <button id="btn-text-bills" class="btn btn-secondary" hidden title="Text bills to all accounts">💬 Text Bills</button>
       <button id="btn-settings" class="btn btn-icon" aria-label="Settings" title="Settings">⚙</button>
     </div>
   </header>
@@ -53,7 +52,6 @@
             <th class="num reading-col col-end">End</th>
             <th class="num sortable col-gal" data-sort="gallons">Gal</th>
             <th class="num sortable col-amt" data-sort="amount">Amount</th>
-            <th class="no-print action-col"></th>
           </tr>
         </thead>
         <tbody id="billing-body"></tbody>
@@ -70,7 +68,6 @@
               <th class="num reading-col col-end">End</th>
               <th class="num col-gal">Gal</th>
               <th class="num col-amt">Amount</th>
-              <th class="no-print action-col"></th>
             </tr>
           </thead>
           <tbody id="master-body"></tbody>
@@ -188,6 +185,6 @@
   </dialog>
 
   <script src="js/vendor/xlsx.full.min.js"></script>
-  <script type="module" src="js/app.js?v=28"></script>
+  <script type="module" src="js/app.js?v=29"></script>
 </body>
 </html>
