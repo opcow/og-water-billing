@@ -143,9 +143,6 @@ function setupEvents() {
     document.getElementById('period-popover').hidden = true;
   });
 
-  // Column resize handles
-  initColumnResize('billing-table');
-
   // Column sort — only on the main billing table, not the master meter table
   document.querySelector('#billing-table thead').addEventListener('click', e => {
     const th = e.target.closest('th[data-sort]');
@@ -937,29 +934,6 @@ async function unlinkDataFile() {
   await db.setConfig('dataFileHandle', null);
   state.dataFileHandle = null;
   ui.renderDataTab(!!state.currentPeriodId, null);
-}
-
-// ── Column resize ─────────────────────────────────────────────────────────────
-
-function initColumnResize(tableId) {
-  const table = document.getElementById(tableId);
-  if (!table) return;
-  table.querySelectorAll('thead th').forEach(th => {
-    if (th.classList.contains('action-col')) return;
-    const handle = document.createElement('span');
-    handle.className = 'col-resize-handle no-print';
-    th.appendChild(handle);
-    handle.addEventListener('mousedown', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const startX = e.clientX;
-      const startW = th.offsetWidth;
-      const onMove = e => { th.style.width = Math.max(40, startW + e.clientX - startX) + 'px'; };
-      const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-  });
 }
 
 // ── Service worker ────────────────────────────────────────────────────────────
