@@ -108,6 +108,13 @@ export function buildEmailBody(account, reading, period) {
   return lines.filter(l => l !== null).join('\n');
 }
 
+export function buildSMSBody(account, reading, period) {
+  const g = getGallons(reading, period.normalizationFactor);
+  const amount = calcBill(g ?? 0, period.rateTableSnapshot);
+  const galStr = g != null ? g.toLocaleString() + ' gal' : 'no reading';
+  return `Water Bill — ${period.name}\n${account.name}: ${galStr}\nTotal: $${amount.toFixed(2)}`;
+}
+
 export function formatCurrency(n) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 }

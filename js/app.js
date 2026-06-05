@@ -85,6 +85,7 @@ function render() {
   document.getElementById('btn-delete-period').hidden = !hasPeriods;
   document.getElementById('btn-sync').hidden        = !state.githubConfig?.key;
   document.getElementById('btn-email-bills').hidden = !state.githubConfig?.key || !hasPeriods;
+  document.getElementById('btn-text-bills').hidden  = !state.githubConfig?.key || !hasPeriods;
 
   if (!hasPeriods) return;
 
@@ -176,9 +177,10 @@ function setupEvents() {
     if (e.target.matches('#btn-unlink-data-file'))    unlinkDataFile();
   });
 
-  // GitHub sync and email bills
+  // GitHub sync, email bills, and text bills
   document.getElementById('btn-sync').addEventListener('click', githubSync);
   document.getElementById('btn-email-bills').addEventListener('click', sendAllBills);
+  document.getElementById('btn-text-bills').addEventListener('click', sendAllTexts);
 
   // Period creation dialog
   document.getElementById('close-period-dialog').addEventListener('click', closePeriodDialog);
@@ -194,9 +196,10 @@ function setupEvents() {
     document.getElementById(bodyId).addEventListener('keydown', handleReadingKeydown);
   }
 
-  // Email buttons — event delegation on document
+  // Email and text buttons — event delegation on document
   document.addEventListener('click', e => {
     if (e.target.matches('.email-btn')) handleEmailClick(Number(e.target.dataset.accountId));
+    if (e.target.matches('.text-btn'))  handleTextClick(Number(e.target.dataset.accountId));
   });
 
   // Remove buttons in settings — event delegation
@@ -389,7 +392,14 @@ async function confirmNormalize() {
   syncToFile();
 }
 
-// ── Email ─────────────────────────────────────────────────────────────────────
+// ── Email / Text ──────────────────────────────────────────────────────────────
+
+function toE164(phone) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) return '+1' + digits;
+  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
+  return '+' + digits;
+}
 
 function handleEmailClick(accountId) {
   const account = accountsFor(state.currentPeriod).find(a => a.id === accountId);
@@ -402,6 +412,16 @@ function handleEmailClick(accountId) {
   const subject = encodeURIComponent(`Water Bill — ${period.name}`);
   const body    = encodeURIComponent(billing.buildEmailBody(account, reading, period));
   window.open(`mailto:${account.email}?subject=${subject}&body=${body}`);
+}
+
+function handleTextClick(accountId) {
+  const account = accountsFor(state.currentPeriod).find(a => a.id === accountId);
+  const period  = state.currentPeriod;
+  if (!account?.phone || !period) return;
+  const reading = period.readings.find(r => r.accountId === accountId)
+    ?? { accountId, startReading: null, endReading: null };
+  const body = encodeURIComponent(billing.buildSMSBody(account, reading, period));
+  window.location.href = `sms:${account.phone}&body=${body}`;
 }
 
 // ── Send all bills ────────────────────────────────────────────────────────────
@@ -457,6 +477,58 @@ async function sendAllBills() {
   }
 }
 
+// ── Send all texts ────────────────────────────────────────────────────────────
+
+async function sendAllTexts() {
+  const cfg = state.githubConfig;
+  if (!cfg?.key || !state.currentPeriod) return;
+
+  const period   = state.currentPeriod;
+  const accounts = accountsFor(period);
+  const eligible = accounts.filter(a => a.phone && !a.isMaster);
+
+  if (!eligible.length) {
+    alert('No accounts have phone numbers configured.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-text-bills');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '💬 Sending…';
+
+  try {
+    const texts = eligible.map(account => {
+      const reading = period.readings.find(r => r.accountId === account.id)
+        ?? { accountId: account.id, startReading: null, endReading: null };
+      return {
+        to:   toE164(account.phone),
+        name: account.name,
+        body: billing.buildSMSBody(account, reading, period),
+      };
+    });
+
+    const res = await fetch(SYNC_URL, {
+      method: 'POST',
+      headers: { 'X-Sync-Key': cfg.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'sms', texts }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const { results } = await res.json();
+    const sent   = results.filter(r => r.ok).length;
+    const failed = results.filter(r => !r.ok);
+
+    btn.textContent = failed.length
+      ? `💬 ${sent} sent, ${failed.length} failed (${failed.map(r => r.name || r.to).join(', ')})`
+      : `💬 ${sent} sent`;
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 5000);
+  } catch (err) {
+    btn.textContent = `💬 Failed: ${err.message}`;
+    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 4000);
+  }
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 function openSettings() {
@@ -502,6 +574,7 @@ async function saveSettings() {
   state.githubConfig = githubConfig;
   document.getElementById('btn-sync').hidden        = !githubConfig;
   document.getElementById('btn-email-bills').hidden = !githubConfig || !state.currentPeriod;
+  document.getElementById('btn-text-bills').hidden  = !githubConfig || !state.currentPeriod;
 
   closeSettings();
   render();

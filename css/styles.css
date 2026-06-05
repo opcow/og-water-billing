@@ -181,7 +181,8 @@ body {
 .reading-col { width: 80px; }
 .col-gal     { width: 72px; }
 .col-amt     { width: 82px; }
-.action-col  { width: 72px; text-align: center; }
+.action-col    { width: 112px; text-align: center; }
+td.action-col  { display: flex; gap: 4px; align-items: center; justify-content: center; }
 
 /* Inline reading inputs */
 .reading-input {
@@ -211,7 +212,7 @@ th.sort-desc::after { content: ' ▼'; font-size: 9px; opacity: .8; }
 
 /* ── Email button (in-row) ───────────────────────────────────────────────── */
 
-.email-btn {
+.email-btn, .text-btn {
   padding: 3px 10px;
   font-size: 12px;
   background: var(--blue-light);
@@ -221,7 +222,9 @@ th.sort-desc::after { content: ' ▼'; font-size: 9px; opacity: .8; }
   cursor: pointer;
   white-space: nowrap;
 }
-.email-btn:hover { background: var(--blue-mid); }
+.email-btn:hover, .text-btn:hover { background: var(--blue-mid); }
+
+#master-section .action-col { display: none !important; }
 
 /* ── Master Meter section ────────────────────────────────────────────────── */
 
@@ -528,8 +531,10 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 
   /* Hide non-essential columns */
   .billing-table .col-start,
-  .billing-table .col-gal,
-  .billing-table .action-col { display: none; }
+  .billing-table .col-gal { display: none; }
+
+  .billing-table .col-account { width: 70px; }
+  .billing-table td.col-end { padding: 4px 6px !important; }
 
   /* Prevent iOS tap-zoom (font-size < 16px triggers zoom); larger touch targets */
   .reading-input { font-size: 16px; }

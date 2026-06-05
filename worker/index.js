@@ -41,7 +41,29 @@ export default {
     }
 
     if (request.method === 'POST') {
-      const { bills } = await request.json();
+      const body = await request.json();
+
+      if (body.type === 'sms') {
+        const { texts } = body;
+        const results = [];
+        const authHeader = 'Basic ' + btoa(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`);
+        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`;
+        for (const text of texts) {
+          const params = new URLSearchParams({ From: env.TWILIO_FROM_NUMBER, To: text.to, Body: text.body });
+          const res = await fetch(twilioUrl, {
+            method: 'POST',
+            headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString(),
+          });
+          const data = await res.json().catch(() => ({}));
+          results.push({ to: text.to, name: text.name, ok: res.ok, error: data.message ?? data.error_message ?? null });
+        }
+        return new Response(JSON.stringify({ results }), {
+          headers: { 'Content-Type': 'application/json', ...CORS },
+        });
+      }
+
+      const { bills } = body;
       const results = [];
       for (const bill of bills) {
         const res = await fetch('https://api.resend.com/emails', {

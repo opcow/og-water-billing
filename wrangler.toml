@@ -10,3 +10,6 @@ FROM_EMAIL = "billing@quarklift.com"
 #   wrangler secret put GITHUB_TOKEN
 #   wrangler secret put SYNC_KEY
 #   wrangler secret put RESEND_API_KEY
+#   wrangler secret put TWILIO_ACCOUNT_SID
+#   wrangler secret put TWILIO_AUTH_TOKEN
+#   wrangler secret put TWILIO_FROM_NUMBER

@@ -117,6 +117,9 @@ function rowHTML(account, reading, period, lockStartReadings) {
   const emailBtn = account.email
     ? `<button class="email-btn no-print" data-account-id="${account.id}">Email</button>`
     : '';
+  const textBtn = account.phone
+    ? `<button class="text-btn no-print" data-account-id="${account.id}">Text</button>`
+    : '';
 
   const startCell = lockStartReadings
     ? `<td class="num col-start">${startV !== '' ? startV : '—'}</td>`
@@ -143,7 +146,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
       </td>
       <td class="num col-gal" id="gal-${account.id}">${g != null ? formatNumber(g) : '—'}</td>
       <td class="num col-amt" id="amt-${account.id}">${amount != null ? formatCurrency(amount) : '—'}</td>
-      <td class="no-print action-col">${emailBtn}</td>
+      <td class="no-print action-col">${emailBtn}${textBtn}</td>
     </tr>`;
 }
 
