@@ -8,6 +8,3 @@ FILE_PATH = "water-billing.json"
 # Secrets — set with:
 #   wrangler secret put GITHUB_TOKEN
 #   wrangler secret put SYNC_KEY
-#   wrangler secret put TWILIO_ACCOUNT_SID
-#   wrangler secret put TWILIO_AUTH_TOKEN
-#   wrangler secret put TWILIO_FROM_NUMBER

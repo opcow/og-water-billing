@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=11">
+  <link rel="stylesheet" href="css/styles.css?v=12">
 </head>
 <body>
 
@@ -25,7 +25,6 @@
       <button id="btn-print" class="btn btn-secondary" hidden>Print</button>
       <button id="btn-delete-period" class="btn btn-secondary btn-delete-period" hidden title="Delete this billing sheet">Delete Sheet</button>
       <button id="btn-sync" class="btn btn-secondary" hidden title="Sync with GitHub">↕ Sync</button>
-      <button id="btn-text-bills" class="btn btn-secondary" hidden title="Text bills to all accounts">💬 Text Bills</button>
       <button id="btn-settings" class="btn btn-icon" aria-label="Settings" title="Settings">⚙</button>
     </div>
   </header>
@@ -87,6 +86,7 @@
       <button class="tab-btn active" data-tab="rates">Rates</button>
       <button class="tab-btn" data-tab="accounts">Accounts</button>
       <button class="tab-btn" data-tab="data">Data</button>
+      <button class="tab-btn" data-tab="messages">Messages</button>
     </div>
     <div class="dialog-body">
 
@@ -98,6 +98,9 @@
           </label>
           <label>Billing Day of Month
             <input type="number" id="billing-day" min="1" max="31" style="width:80px">
+          </label>
+          <label>Due Day of Month
+            <input type="number" id="due-day" min="1" max="31" style="width:80px">
           </label>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;font-size:13px;color:var(--text)">
@@ -133,6 +136,9 @@
 
       <!-- Data tab -->
       <div id="tab-data" class="tab-panel" hidden></div>
+
+      <!-- Messages tab -->
+      <div id="tab-messages" class="tab-panel" hidden></div>
 
     </div>
     <div class="dialog-footer">
@@ -185,6 +191,6 @@
   </dialog>
 
   <script src="js/vendor/xlsx.full.min.js"></script>
-  <script type="module" src="js/app.js?v=29"></script>
+  <script type="module" src="js/app.js?v=32"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber } from './billing.js';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -181,16 +181,19 @@ function renderTotals(period, nonMaster, readMap) {
 
 // ── Settings modal ────────────────────────────────────────────────────────────
 
-export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null) {
+export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null) {
   const baseCharge  = rateTable[0][3] ?? 0;
   const billingDay  = rateTable[0][4] ?? 3;
+  const dueDay      = rateTable[0][5] ?? 20;
   document.getElementById('base-charge').value  = baseCharge;
   document.getElementById('billing-day').value  = billingDay;
+  document.getElementById('due-day').value       = dueDay;
   document.getElementById('lock-start-readings').checked = !!lockStartReadings;
 
   renderRateTiers(rateTable);
   renderAccountsEditor(accounts);
   renderDataTab(hasPeriod, fileHandle, githubConfig);
+  renderMessagesTab(smsTemplate);
   switchTab('rates');
 }
 
@@ -285,6 +288,54 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null)
     </div>`;
 }
 
+export function renderMessagesTab(template) {
+  document.getElementById('tab-messages').innerHTML = `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Customize the SMS message sent when you tap a bill amount. Available placeholders:
+    </p>
+    <table style="font-size:12px;margin-bottom:14px;border-collapse:collapse">
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{period}</td><td style="color:var(--muted)">Billing period (e.g. Jun 2026)</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{name}</td><td style="color:var(--muted)">Account name (e.g. #11)</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{holder}</td><td style="color:var(--muted)">Account holder name (falls back to account name)</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{gallons}</td><td style="color:var(--muted)">Usage (e.g. 4,920 gal)</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{amount}</td><td style="color:var(--muted)">Amount due (e.g. $55.76)</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{due}</td><td style="color:var(--muted)">Payment due date (MM/DD/YYYY)</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{start}</td><td style="color:var(--muted)">Start meter reading</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:var(--blue);font-family:monospace">{end}</td><td style="color:var(--muted)">End meter reading</td></tr>
+    </table>
+    <label style="display:block;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:14px">
+      Template
+      <textarea id="sms-template" rows="4"
+        style="display:block;width:100%;margin-top:6px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:monospace;font-size:13px;resize:vertical;line-height:1.5"
+      >${esc(template || DEFAULT_SMS_TEMPLATE)}</textarea>
+    </label>
+    <button id="btn-reset-template" class="btn btn-secondary" style="margin-bottom:16px">Reset to default</button>
+    <p style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Preview</p>
+    <pre id="sms-preview" style="font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;white-space:pre-wrap;line-height:1.5;margin:0"></pre>`;
+
+  updateSMSPreview();
+  document.getElementById('sms-template').addEventListener('input', updateSMSPreview);
+  document.getElementById('btn-reset-template').addEventListener('click', () => {
+    document.getElementById('sms-template').value = DEFAULT_SMS_TEMPLATE;
+    updateSMSPreview();
+  });
+}
+
+function updateSMSPreview() {
+  const tmpl = document.getElementById('sms-template')?.value ?? '';
+  const preview = document.getElementById('sms-preview');
+  if (!preview) return;
+  preview.textContent = tmpl
+    .replace(/\{period\}/g,  'Jun 2026')
+    .replace(/\{name\}/g,    '#11')
+    .replace(/\{holder\}/g,  'Jane Smith')
+    .replace(/\{gallons\}/g, '4,920 gal')
+    .replace(/\{amount\}/g,  '$55.76')
+    .replace(/\{due\}/g,     '06/20/2026')
+    .replace(/\{start\}/g,  '12345')
+    .replace(/\{end\}/g,    '17265');
+}
+
 function renderRateTiers(rateTable) {
   const tbody = document.getElementById('rate-table-body');
   // All but the last row are editable tiers; the last row (bracket === '-') is the final tier.
@@ -342,8 +393,7 @@ function accountRowHTML(a) {
         <button class="btn btn-danger btn-sm remove-account" style="padding:3px 8px;font-size:12px">×</button>
       </div>
       <div class="acc-secondary">
-        <input type="email" class="acc-email" value="${esc(a.email ?? '')}" placeholder="Email (optional)">
-        <input type="tel"   class="acc-phone" value="${esc(a.phone ?? '')}" placeholder="Phone (optional)">
+        <input type="tel" class="acc-phone" value="${esc(a.phone ?? '')}" placeholder="Phone (optional)">
       </div>
     </div>`;
 }
@@ -413,6 +463,7 @@ export function switchTab(tab) {
 export function collectSettings() {
   const baseCharge = parseFloat(document.getElementById('base-charge').value) || 0;
   const billingDay = parseInt(document.getElementById('billing-day').value, 10) || 3;
+  const dueDay     = parseInt(document.getElementById('due-day').value, 10) || 20;
 
   const rows = document.querySelectorAll('#rate-table-body .tier-row');
   const rateTable = [];
@@ -435,12 +486,14 @@ export function collectSettings() {
     }
   });
 
-  // Ensure base charge and billing day are on row[0]
+  // Ensure base charge, billing day, and due day are on row[0]
   if (rateTable.length > 0) {
     if (rateTable[0].length < 4) rateTable[0].push(baseCharge);
     if (rateTable[0].length < 5) rateTable[0].push(billingDay);
+    if (rateTable[0].length < 6) rateTable[0].push(dueDay);
     rateTable[0][3] = baseCharge;
     rateTable[0][4] = billingDay;
+    rateTable[0][5] = dueDay;
   }
 
   if (rateTable.length === 0 || rateTable[rateTable.length - 1][0] !== '-') {
@@ -454,7 +507,6 @@ export function collectSettings() {
     const acc = {
       name:          row.querySelector('.acc-name')?.value.trim()   || '',
       accountHolder: row.querySelector('.acc-holder')?.value.trim() || '',
-      email:         row.querySelector('.acc-email')?.value.trim()  || '',
       phone:         row.querySelector('.acc-phone')?.value.trim()  || '',
       isMaster:      false,
       sortOrder:     i,
@@ -464,5 +516,6 @@ export function collectSettings() {
   }).filter(a => a.name);
 
   const lockStartReadings = document.getElementById('lock-start-readings')?.checked ?? false;
-  return { rateTable, accounts, lockStartReadings };
+  const smsTemplate = document.getElementById('sms-template')?.value.trim() || null;
+  return { rateTable, accounts, lockStartReadings, smsTemplate };
 }

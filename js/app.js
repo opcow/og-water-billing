@@ -15,6 +15,7 @@ const state = {
   sortConfig: { column: null, dir: 'asc' },
   dataFileHandle: null,
   githubConfig: null,
+  smsTemplate: null,
   get currentPeriod() {
     return this.periods.find(p => p.id === this.currentPeriodId) ?? null;
   },
@@ -33,11 +34,12 @@ function accountsFor(period) {
 
 async function init() {
   await db.seedIfEmpty();
-  [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
+  [state.periods, state.accounts, state.rateTable, state.lockStartReadings, state.smsTemplate] = await Promise.all([
     db.getPeriods(),
     db.getAccounts(),
     db.getConfig('rateTable'),
     db.getConfig('lockStartReadings').then(v => v ?? true),
+    db.getConfig('smsTemplate').then(v => v ?? null),
   ]);
   if (state.periods.length > 0) {
     state.currentPeriodId = state.periods[state.periods.length - 1].id;
@@ -83,8 +85,7 @@ function render() {
   document.getElementById('btn-normalize').hidden     = !hasPeriods;
   document.getElementById('btn-print').hidden         = !hasPeriods;
   document.getElementById('btn-delete-period').hidden = !hasPeriods;
-  document.getElementById('btn-sync').hidden       = !state.githubConfig?.key;
-  document.getElementById('btn-text-bills').hidden = !state.githubConfig?.key || !hasPeriods;
+  document.getElementById('btn-sync').hidden = !state.githubConfig?.key;
 
   if (!hasPeriods) return;
 
@@ -176,9 +177,8 @@ function setupEvents() {
     if (e.target.matches('#btn-unlink-data-file'))    unlinkDataFile();
   });
 
-  // GitHub sync and text bills
+  // GitHub sync
   document.getElementById('btn-sync').addEventListener('click', githubSync);
-  document.getElementById('btn-text-bills').addEventListener('click', sendAllTexts);
 
   // Period creation dialog
   document.getElementById('close-period-dialog').addEventListener('click', closePeriodDialog);
@@ -391,79 +391,20 @@ async function confirmNormalize() {
 
 // ── Text ──────────────────────────────────────────────────────────────────────
 
-function toE164(phone) {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length === 10) return '+1' + digits;
-  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
-  return '+' + digits;
-}
-
 function handleTextClick(accountId) {
   const account = accountsFor(state.currentPeriod).find(a => a.id === accountId);
   const period  = state.currentPeriod;
   if (!account?.phone || !period) return;
   const reading = period.readings.find(r => r.accountId === accountId)
     ?? { accountId, startReading: null, endReading: null };
-  const body = encodeURIComponent(billing.buildSMSBody(account, reading, period));
+  const body = encodeURIComponent(billing.buildSMSBody(account, reading, period, state.smsTemplate));
   window.location.href = `sms:${account.phone}&body=${body}`;
-}
-
-// ── Send all texts ────────────────────────────────────────────────────────────
-
-async function sendAllTexts() {
-  const cfg = state.githubConfig;
-  if (!cfg?.key || !state.currentPeriod) return;
-
-  const period   = state.currentPeriod;
-  const accounts = accountsFor(period);
-  const eligible = accounts.filter(a => a.phone && !a.isMaster);
-
-  if (!eligible.length) {
-    alert('No accounts have phone numbers configured.');
-    return;
-  }
-
-  const btn = document.getElementById('btn-text-bills');
-  btn.disabled = true;
-  const origText = btn.textContent;
-  btn.textContent = '💬 Sending…';
-
-  try {
-    const texts = eligible.map(account => {
-      const reading = period.readings.find(r => r.accountId === account.id)
-        ?? { accountId: account.id, startReading: null, endReading: null };
-      return {
-        to:   toE164(account.phone),
-        name: account.name,
-        body: billing.buildSMSBody(account, reading, period),
-      };
-    });
-
-    const res = await fetch(SYNC_URL, {
-      method: 'POST',
-      headers: { 'X-Sync-Key': cfg.key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'sms', texts }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const { results } = await res.json();
-    const sent   = results.filter(r => r.ok).length;
-    const failed = results.filter(r => !r.ok);
-
-    btn.textContent = failed.length
-      ? `💬 ${sent} sent, ${failed.length} failed (${failed.map(r => r.name || r.to).join(', ')})`
-      : `💬 ${sent} sent`;
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 5000);
-  } catch (err) {
-    btn.textContent = `💬 Failed: ${err.message}`;
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 4000);
-  }
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 function openSettings() {
-  ui.renderSettings(state.rateTable, state.accounts, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig);
+  ui.renderSettings(state.rateTable, state.accounts, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate);
   document.getElementById('settings-dialog').showModal();
 }
 
@@ -474,15 +415,17 @@ function closeSettings() {
 async function saveSettings() {
   const result = ui.collectSettings();
   if (!result) return;
-  const { rateTable, accounts, lockStartReadings } = result;
+  const { rateTable, accounts, lockStartReadings, smsTemplate } = result;
 
   // Master accounts are not shown in the editor — preserve them as-is
   const masters = state.accounts.filter(a => a.isMaster);
   await Promise.all([
     db.setConfig('rateTable', rateTable),
     db.setConfig('lockStartReadings', lockStartReadings),
+    db.setConfig('smsTemplate', smsTemplate),
     db.replaceAllAccounts([...accounts, ...masters]),
   ]);
+  state.smsTemplate = smsTemplate;
   state.lockStartReadings = lockStartReadings;
 
   state.rateTable  = rateTable;
@@ -503,8 +446,7 @@ async function saveSettings() {
   const githubConfig = syncKey ? { key: syncKey } : null;
   await db.setConfig('githubConfig', githubConfig);
   state.githubConfig = githubConfig;
-  document.getElementById('btn-sync').hidden       = !githubConfig;
-  document.getElementById('btn-text-bills').hidden = !githubConfig || !state.currentPeriod;
+  document.getElementById('btn-sync').hidden = !githubConfig;
 
   closeSettings();
   render();

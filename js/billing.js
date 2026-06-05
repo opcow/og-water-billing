@@ -64,12 +64,30 @@ export function normalizePeriod(period, readingDay, billingDay) {
   return { ...period, normalizationFactor: expectedDays / actualDays, readingDay };
 }
 
-export function buildSMSBody(account, reading, period) {
+const DEFAULT_SMS_TEMPLATE = 'Water Bill — {period}\n{holder}: {gallons}\nTotal: {amount}';
+
+export function buildSMSBody(account, reading, period, template) {
   const g = getGallons(reading, period.normalizationFactor);
   const amount = calcBill(g ?? 0, period.rateTableSnapshot);
   const galStr = g != null ? g.toLocaleString() + ' gal' : 'no reading';
-  return `Water Bill — ${period.name}\n${account.name}: ${galStr}\nTotal: $${amount.toFixed(2)}`;
+  const dueDay = period.rateTableSnapshot[0][5] ?? 20;
+  const [ey, em] = period.endDate.split('-').map(Number);
+  const due = new Date(ey, em - 1, dueDay);
+  const dueStr = `${String(due.getMonth()+1).padStart(2,'0')}/${String(due.getDate()).padStart(2,'0')}/${due.getFullYear()}`;
+  const startStr = reading.startReading != null ? String(reading.startReading) : '—';
+  const endStr   = reading.endReading   != null ? String(reading.endReading)   : '—';
+  return (template || DEFAULT_SMS_TEMPLATE)
+    .replace(/\{period\}/g,  period.name)
+    .replace(/\{name\}/g,    account.name)
+    .replace(/\{holder\}/g,  account.accountHolder || account.name)
+    .replace(/\{gallons\}/g, galStr)
+    .replace(/\{amount\}/g,  '$' + amount.toFixed(2))
+    .replace(/\{due\}/g,     dueStr)
+    .replace(/\{start\}/g,   startStr)
+    .replace(/\{end\}/g,     endStr);
 }
+
+export { DEFAULT_SMS_TEMPLATE };
 
 export function formatCurrency(n) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
