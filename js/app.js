@@ -1,6 +1,8 @@
-import * as db      from './db.js?v=2';
+import * as db      from './db.js?v=3';
 import * as billing from './billing.js?v=3';
-import * as ui      from './ui.js?v=7';
+import * as ui      from './ui.js?v=9';
+
+// Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -16,8 +18,9 @@ const state = {
   dataFileHandle: null,
   githubConfig: null,
   smsTemplate: null,
-  maxSheets: 60,
+  maxSheets: 12,
   showMasterSection: true,
+  localDirty: false,
   get currentPeriod() {
     return this.periods.find(p => p.id === this.currentPeriodId) ?? null;
   },
@@ -47,7 +50,7 @@ async function init() {
     db.getConfig('rateTable'),
     db.getConfig('lockStartReadings').then(v => v ?? true),
     db.getConfig('smsTemplate').then(v => v ?? null),
-    db.getConfig('maxSheets').then(v => v ?? 60),
+    db.getConfig('maxSheets').then(v => v ?? 12),
     db.getConfig('showMasterSection').then(v => v ?? true),
   ]);
   if (state.periods.length > 0) {
@@ -89,6 +92,12 @@ async function init() {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
+function updatePeriodNavButtons() {
+  const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+  document.getElementById('btn-period-prev').disabled = idx <= 0;
+  document.getElementById('btn-period-next').disabled = idx < 0 || idx >= state.periods.length - 1;
+}
+
 function render() {
   const hasPeriods = state.periods.length > 0;
   document.getElementById('empty-state').hidden  = hasPeriods;
@@ -103,6 +112,7 @@ function render() {
 
   ui.renderPeriodPicker(state.periods, state.currentPeriodId);
   ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  updatePeriodNavButtons();
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -117,6 +127,26 @@ function setupEvents() {
     popoverYear = p ? Number(p.endDate.slice(0, 4)) : new Date().getFullYear();
     ui.renderPeriodPopover(state.periods, state.currentPeriodId, popoverYear);
     popover.hidden = false;
+  });
+
+  document.getElementById('btn-period-prev').addEventListener('click', () => {
+    const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+    if (idx <= 0) return;
+    state.currentPeriodId = state.periods[idx - 1].id;
+    undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
+    ui.renderPeriodPicker(state.periods, state.currentPeriodId);
+    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    updatePeriodNavButtons();
+  });
+
+  document.getElementById('btn-period-next').addEventListener('click', () => {
+    const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+    if (idx < 0 || idx >= state.periods.length - 1) return;
+    state.currentPeriodId = state.periods[idx + 1].id;
+    undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
+    ui.renderPeriodPicker(state.periods, state.currentPeriodId);
+    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    updatePeriodNavButtons();
   });
 
   document.getElementById('popover-prev-year').addEventListener('click', e => {
@@ -139,6 +169,7 @@ function setupEvents() {
     document.getElementById('period-popover').hidden = true;
     ui.renderPeriodPicker(state.periods, state.currentPeriodId);
     ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    updatePeriodNavButtons();
   });
 
   document.addEventListener('click', () => {
@@ -328,6 +359,11 @@ function setupEvents() {
   document.getElementById('accounts-editor').addEventListener('click', e => {
     if (e.target.matches('.remove-account')) e.target.closest('.account-row').remove();
   });
+
+  // Auto-sync
+  const autoSync = () => { if (state.githubConfig?.key) githubSync(true); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) autoSync(); });
+  setInterval(autoSync, 5 * 60 * 1000);
 }
 
 // ── Reading input handler ─────────────────────────────────────────────────────
@@ -365,6 +401,7 @@ async function flushSave(period) {
   await db.savePeriod(period);
   const idx = state.periods.findIndex(p => p.id === period.id);
   if (idx >= 0) state.periods[idx] = period;
+  state.localDirty = true;
   syncToFile();
 }
 
@@ -409,9 +446,31 @@ function redo() {
 // ── Sheet history trim ────────────────────────────────────────────────────────
 
 async function trimOldPeriods() {
-  const max = state.maxSheets ?? 60;
+  const max = state.maxSheets ?? 12;
   if (state.periods.length <= max) return;
   const toDelete = state.periods.slice(0, state.periods.length - max);
+
+  // Merge account info from deleted periods into master accounts to preserve configured data
+  const idToCurrentAccount = new Map(state.accounts.map(a => [a.id, a]));
+  toDelete.forEach(period => {
+    (period.accountsSnapshot || []).forEach(snap => {
+      const current = idToCurrentAccount.get(snap.id);
+      if (current) {
+        // Preserve configured fields from snapshot if current ones are empty
+        if (snap.phone && !current.phone) current.phone = snap.phone;
+        if (snap.accountHolder && !current.accountHolder) current.accountHolder = snap.accountHolder;
+      } else {
+        // Account exists in old period but not in current list — preserve it
+        idToCurrentAccount.set(snap.id, snap);
+      }
+    });
+  });
+
+  // Save merged accounts back
+  const merged = Array.from(idToCurrentAccount.values());
+  await db.replaceAllAccounts(merged);
+  state.accounts = merged;
+
   await Promise.all(toDelete.map(p => db.deletePeriod(p.id)));
   state.periods = state.periods.slice(state.periods.length - max);
   if (!state.periods.find(p => p.id === state.currentPeriodId)) {
@@ -443,6 +502,7 @@ async function handleNewPeriod() {
   period.id = id;
   state.periods.push(period);
   state.currentPeriodId = id;
+  state.localDirty = true;
   render();
   await trimOldPeriods();
   syncToFile();
@@ -456,6 +516,7 @@ async function handleDeletePeriod() {
   await db.deletePeriod(period.id);
   state.periods = state.periods.filter(p => p.id !== period.id);
   state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
+  state.localDirty = true;
   render();
   syncToFile();
 }
@@ -521,6 +582,7 @@ async function confirmPeriod() {
   period.id = id;
   state.periods.push(period);
   state.currentPeriodId = id;
+  state.localDirty = true;
   closePeriodDialog();
   render();
   await trimOldPeriods();
@@ -584,6 +646,7 @@ async function confirmNormalize() {
   await db.savePeriod(period);
   const idx = state.periods.findIndex(p => p.id === period.id);
   if (idx >= 0) state.periods[idx] = period;
+  state.localDirty = true;
   document.getElementById('normalize-dialog').close();
   ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
   syncToFile();
@@ -701,6 +764,7 @@ async function saveSettings() {
   state.showMasterSection = result.showMasterSection;
   await db.setConfig('maxSheets', result.maxSheets);
   await db.setConfig('showMasterSection', result.showMasterSection);
+  state.localDirty = true;
 
   state.rateTable  = rateTable;
   state.accounts   = await db.getAccounts();
@@ -964,14 +1028,16 @@ async function syncToFile() {
   } catch (e) { console.warn('Auto-save to file failed:', e); }
 }
 
-async function githubSync() {
+async function githubSync(isAuto = false) {
   const cfg = state.githubConfig;
   if (!cfg?.key) return;
 
   const btn = document.getElementById('btn-sync');
-  btn.disabled = true;
+  if (!isAuto) {
+    btn.disabled = true;
+  }
   const origText = btn.textContent;
-  btn.textContent = '⟳';
+  if (!isAuto) btn.textContent = '⟳';
 
   try {
     const headers = {
@@ -979,38 +1045,87 @@ async function githubSync() {
       'Accept': 'application/vnd.github.v3+json',
     };
 
-    // Fetch remote file via Worker (404 = first push, not an error)
-    let remoteData = null, remoteSha = null;
+    // Fetch remote file via Worker with ETag conditional (404 = first push, not an error)
+    let remoteData = null, remoteSha = null, remoteEtag = null;
+    const lastGithubEtag = await db.getConfig('lastGithubEtag');
+    const lastGithubSha = await db.getConfig('lastGithubSha');
+    if (lastGithubEtag) headers['If-None-Match'] = lastGithubEtag;
+
     const res = await fetch(SYNC_URL, { headers });
-    if (res.ok) {
+    if (res.status === 304) {
+      // Remote unchanged: only push if local is dirty
+      if (state.localDirty && lastGithubSha) {
+        const localData = await buildBackupData();
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
+        const putRes = await fetch(SYNC_URL, {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
+            content,
+            sha: lastGithubSha,
+          }),
+        });
+        if (!putRes.ok) {
+          const err = await putRes.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${putRes.status}`);
+        }
+        state.localDirty = false;
+        await db.setConfig('lastGithubSync', localData.exportedAt);
+      }
+    } else if (res.ok) {
+      // Remote has new data: extract and store etag + sha
       const json = await res.json();
       remoteSha = json.sha;
+      remoteEtag = res.headers.get('ETag');
       remoteData = JSON.parse(atob(json.content.replace(/\n/g, '')));
+
+      if (remoteEtag) await db.setConfig('lastGithubEtag', remoteEtag);
+      if (remoteSha) await db.setConfig('lastGithubSha', remoteSha);
+
+      // Compare timestamps to decide pull vs push
+      const lastSynced     = await db.getConfig('lastGithubSync');
+      const lastSyncedTime = lastSynced ? Date.parse(lastSynced) : 0;
+      const remoteTime     = remoteData?.exportedAt ? Date.parse(remoteData.exportedAt) : 0;
+
+      if (remoteTime > lastSyncedTime) {
+        // Pull
+        await applyBackupData(remoteData);
+        [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
+          db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
+          db.getConfig('lockStartReadings').then(v => v ?? true),
+        ]);
+        state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
+        state.sortConfig = { column: null, dir: 'asc' };
+        state.localDirty = false;
+        render();
+        await db.setConfig('lastGithubSync', remoteData.exportedAt);
+      } else if (state.localDirty) {
+        // Push (local is newer/different)
+        const localData = await buildBackupData();
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
+        const putRes = await fetch(SYNC_URL, {
+          method: 'PUT',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
+            content,
+            sha: remoteSha,
+          }),
+        });
+        if (!putRes.ok) {
+          const err = await putRes.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${putRes.status}`);
+        }
+        state.localDirty = false;
+        await db.setConfig('lastGithubSync', localData.exportedAt);
+      }
     } else if (res.status !== 404) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || `HTTP ${res.status}`);
-    }
-
-    // Compare remote exportedAt against the last time THIS device synced,
-    // not against the current clock (buildBackupData stamps exportedAt = now,
-    // which would always look "newer" than anything already on the server).
-    const lastSynced     = await db.getConfig('lastGithubSync');
-    const lastSyncedTime = lastSynced ? Date.parse(lastSynced) : 0;
-    const remoteTime     = remoteData?.exportedAt ? Date.parse(remoteData.exportedAt) : 0;
-
-    if (remoteTime > lastSyncedTime) {
-      await applyBackupData(remoteData);
-      [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
-        db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
-        db.getConfig('lockStartReadings').then(v => v ?? true),
-      ]);
-      state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
-      state.sortConfig = { column: null, dir: 'asc' };
-      render();
-      await db.setConfig('lastGithubSync', remoteData.exportedAt);
     } else {
+      // 404: first push
       const localData = await buildBackupData();
-      // UTF-8-safe base64 for GitHub API (proxied via Worker)
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
       const putRes = await fetch(SYNC_URL, {
         method: 'PUT',
@@ -1018,21 +1133,26 @@ async function githubSync() {
         body: JSON.stringify({
           message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
           content,
-          ...(remoteSha ? { sha: remoteSha } : {}),
         }),
       });
       if (!putRes.ok) {
         const err = await putRes.json().catch(() => ({}));
         throw new Error(err.message || `HTTP ${putRes.status}`);
       }
+      state.localDirty = false;
       await db.setConfig('lastGithubSync', localData.exportedAt);
     }
-    btn.textContent = '✓ Synced';
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+
+    if (!isAuto) {
+      btn.textContent = '✓ Synced';
+      setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+    }
   } catch (e) {
-    alert(`Sync failed: ${e.message}`);
-    btn.textContent = origText;
-    btn.disabled = false;
+    if (!isAuto) {
+      alert(`Sync failed: ${e.message}`);
+      btn.textContent = origText;
+      btn.disabled = false;
+    }
   }
 }
 

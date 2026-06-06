@@ -105,16 +105,16 @@ const DEFAULT_RATE_TABLE = [
 ];
 
 const DEFAULT_ACCOUNTS = [
-  { name: '#2', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 0 },
-  { name: '#3', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 1 },
-  { name: '#4', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 2 },
-  { name: '#5', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 3 },
-  { name: '#6', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 4 },
-  { name: '#10', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 5 },
-  { name: '#11', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 6 },
-  { name: 'Pool Co.', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 7 },
-  { name: 'Emily', accountHolder: '', email: '', phone: '', isMaster: false, sortOrder: 8 },
-  { name: 'Master', accountHolder: '', email: '', phone: '', isMaster: true, sortOrder: 99 },
+  { name: '#2', accountHolder: '', phone: '', isMaster: false, sortOrder: 0 },
+  { name: '#3', accountHolder: '', phone: '', isMaster: false, sortOrder: 1 },
+  { name: '#4', accountHolder: '', phone: '', isMaster: false, sortOrder: 2 },
+  { name: '#5', accountHolder: '', phone: '', isMaster: false, sortOrder: 3 },
+  { name: '#6', accountHolder: '', phone: '', isMaster: false, sortOrder: 4 },
+  { name: '#10', accountHolder: '', phone: '', isMaster: false, sortOrder: 5 },
+  { name: '#11', accountHolder: '', phone: '', isMaster: false, sortOrder: 6 },
+  { name: 'Pool Co.', accountHolder: '', phone: '', isMaster: false, sortOrder: 7 },
+  { name: 'Emily', accountHolder: '', phone: '', isMaster: false, sortOrder: 8 },
+  { name: 'Master', accountHolder: '', phone: '', isMaster: true, sortOrder: 99 },
 ];
 
 export async function seedIfEmpty() {

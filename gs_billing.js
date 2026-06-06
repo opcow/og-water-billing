@@ -186,14 +186,14 @@ function exportForPWA() {
     .map(r => String(r[0]).trim())
     .filter(n => n)
     .map((name, i) => ({
-      id: i + 1, name, accountHolder: '', email: '', phone: '',
+      id: i + 1, name, accountHolder: '', phone: '',
       isMaster: false, sortOrder: i,
     }));
 
   const masterId   = accounts.length + 1;
   const masterName = String(latestSheet.getRange('A' + lr0).getValue() || 'Master');
   accounts.push({
-    id: masterId, name: masterName, accountHolder: '', email: '', phone: '',
+    id: masterId, name: masterName, accountHolder: '', phone: '',
     isMaster: true, sortOrder: 99,
   });
 

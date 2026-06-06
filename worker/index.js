@@ -1,7 +1,8 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Sync-Key, If-None-Match',
+  'Access-Control-Expose-Headers': 'ETag',
 };
 
 export default {
@@ -21,10 +22,16 @@ export default {
     };
 
     if (request.method === 'GET') {
-      const res = await fetch(apiUrl, { headers: ghHeaders });
+      const ifNoneMatch = request.headers.get('If-None-Match');
+      const fetchHeaders = { ...ghHeaders, ...(ifNoneMatch ? { 'If-None-Match': ifNoneMatch } : {}) };
+      const res = await fetch(apiUrl, { headers: fetchHeaders });
+      if (res.status === 304) {
+        return new Response(null, { status: 304, headers: CORS });
+      }
+      const etag = res.headers.get('ETag');
       return new Response(await res.text(), {
         status: res.status,
-        headers: { 'Content-Type': 'application/json', ...CORS },
+        headers: { 'Content-Type': 'application/json', ...(etag ? { ETag: etag } : {}), ...CORS },
       });
     }
 

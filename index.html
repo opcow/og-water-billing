@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=21">
+  <link rel="stylesheet" href="css/styles.css?v=23">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -53,6 +53,10 @@
     <div id="period-view" hidden>
 
       <div class="period-header">
+        <div class="period-nav no-print">
+          <button id="btn-period-prev" class="btn btn-icon" title="Previous sheet">‹</button>
+          <button id="btn-period-next" class="btn btn-icon" title="Next sheet">›</button>
+        </div>
         <p id="period-dates" class="period-dates"></p>
         <div id="undo-toolbar" class="undo-toolbar no-print">
           <button id="btn-undo" class="btn btn-undo-redo" title="Undo (Ctrl+Z)" disabled>↩</button>
@@ -224,6 +228,6 @@
   </div>
 
   <script src="js/vendor/xlsx.full.min.js"></script>
-  <script type="module" src="js/app.js?v=47"></script>
+  <script type="module" src="js/app.js?v=52"></script>
 </body>
 </html>

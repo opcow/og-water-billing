@@ -197,7 +197,7 @@ function renderTotals(period, nonMaster, readMap) {
 
 // ── Settings modal ────────────────────────────────────────────────────────────
 
-export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 60, showMasterSection = true) {
+export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 12, showMasterSection = true) {
   const baseCharge  = rateTable[0][3] ?? 0;
   const billingDay  = rateTable[0][4] ?? 3;
   const dueDay      = rateTable[0][5] ?? 20;
@@ -214,7 +214,7 @@ export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings
   switchTab('accounts');
 }
 
-export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null, maxSheets = 60) {
+export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null, maxSheets = 12) {
   const hasFileAPI = 'showSaveFilePicker' in window;
   const fileSection = hasFileAPI ? `
     <div class="data-section">
@@ -439,7 +439,7 @@ function accountRowHTML(a) {
 export function addAccountRow() {
   const container = document.getElementById('accounts-editor');
   const div = document.createElement('div');
-  div.innerHTML = accountRowHTML({ id: undefined, name: '', accountHolder: '', email: '', phone: '', isMaster: false });
+  div.innerHTML = accountRowHTML({ id: undefined, name: '', accountHolder: '', phone: '', isMaster: false });
   container.appendChild(div.firstElementChild);
 }
 

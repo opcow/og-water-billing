@@ -196,6 +196,21 @@ body {
   margin-bottom: 16px;
 }
 
+.period-nav {
+  display: flex;
+  gap: 2px;
+}
+.period-nav .btn-icon {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  padding: 2px 6px;
+}
+.period-nav .btn-icon:disabled {
+  color: var(--border);
+  cursor: default;
+}
+
 .period-dates {
   font-size: 13px;
   color: var(--muted);
