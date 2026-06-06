@@ -247,7 +247,7 @@ function setupEvents() {
   });
 
   // GitHub sync
-  document.getElementById('btn-sync').addEventListener('click', githubSync);
+  document.getElementById('btn-sync').addEventListener('click', () => githubSync());
 
   // Period creation dialog
   document.getElementById('close-period-dialog').addEventListener('click', closePeriodDialog);
@@ -1208,10 +1208,13 @@ async function githubSync(isAuto = false) {
     }
 
     if (!isAuto) {
-      const btn = document.getElementById('btn-sync');
-      if (btn) {
-        btn.textContent = '✓ Synced';
-        setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+      const syncBtn = document.getElementById('btn-sync');
+      if (syncBtn) {
+        syncBtn.textContent = '✓ Synced';
+        setTimeout(() => {
+          const btn = document.getElementById('btn-sync');
+          if (btn) { btn.textContent = origText; btn.disabled = false; }
+        }, 2000);
       }
     }
   } catch (e) {
