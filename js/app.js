@@ -789,6 +789,7 @@ async function saveSettings() {
 
   const syncKey = document.getElementById('sync-key')?.value.trim() || '';
   const githubConfig = syncKey ? { key: syncKey } : null;
+  const keyWasJustSaved = !state.githubConfig && githubConfig;
   await db.setConfig('githubConfig', githubConfig);
   state.githubConfig = githubConfig;
   document.getElementById('btn-sync').hidden = !githubConfig;
@@ -797,6 +798,10 @@ async function saveSettings() {
   closeSettings();
   render();
   syncToFile();
+
+  if (keyWasJustSaved) {
+    githubSync();
+  }
 }
 
 // ── Import / Export ───────────────────────────────────────────────────────────
