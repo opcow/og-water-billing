@@ -29,6 +29,7 @@ const state = {
 let saveTimer      = null;
 let longPressTimer = null;
 let popoverYear    = null;
+let lastAutoSyncTime = 0;
 const undoHistory = [];
 const redoStack   = [];
 let snapshotPending = false;
@@ -360,10 +361,16 @@ function setupEvents() {
     if (e.target.matches('.remove-account')) e.target.closest('.account-row').remove();
   });
 
-  // Auto-sync
-  const autoSync = () => { if (state.githubConfig?.key) githubSync(true); };
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) autoSync(); });
-  setInterval(autoSync, 5 * 60 * 1000);
+  // Auto-sync: upload when foreground + local changes + 5min elapsed
+  const autoSync = () => {
+    if (!state.githubConfig?.key || document.hidden || !state.localDirty) return;
+    const now = Date.now();
+    if (now - lastAutoSyncTime < 5 * 60 * 1000) return;
+    lastAutoSyncTime = now;
+    githubSync(true);
+  };
+  document.addEventListener('visibilitychange', autoSync);
+  setInterval(autoSync, 60 * 1000);
 }
 
 // ── Reading input handler ─────────────────────────────────────────────────────
