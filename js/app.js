@@ -1014,6 +1014,26 @@ async function pickAndRestoreBackup() {
 
 // ── File system sync ──────────────────────────────────────────────────────────
 
+function mergeReadings(basePeriods, otherPeriods) {
+  const otherMap = new Map(otherPeriods.map(p => [p.name, p]));
+  let hadNewer = false;
+  const merged = basePeriods.map(basePeriod => {
+    const otherPeriod = otherMap.get(basePeriod.name);
+    if (!otherPeriod) return basePeriod;
+    const otherReadingMap = new Map(otherPeriod.readings.map(r => [r.accountId, r]));
+    const mergedReadings = basePeriod.readings.map(baseReading => {
+      const otherReading = otherReadingMap.get(baseReading.accountId);
+      if (!otherReading) return baseReading;
+      const baseAt  = baseReading.endReadingAt  ?? 0;
+      const otherAt = otherReading.endReadingAt ?? 0;
+      if (otherAt > baseAt) { hadNewer = true; return otherReading; }
+      return baseReading;
+    });
+    return { ...basePeriod, readings: mergedReadings };
+  });
+  return { merged, hadNewer };
+}
+
 async function buildBackupData() {
   const [accounts, periods, rateTable, lockStartReadings] = await Promise.all([
     db.getAccounts(), db.getPeriods(), db.getConfig('rateTable'),
@@ -1105,7 +1125,9 @@ async function githubSync(isAuto = false) {
       const remoteTime     = remoteData?.exportedAt ? Date.parse(remoteData.exportedAt) : 0;
 
       if (remoteTime > lastSyncedTime) {
-        // Pull
+        // Pull: merge readings, accept remote structure
+        const { merged, hadNewer } = mergeReadings(remoteData.periods, state.periods);
+        remoteData.periods = merged;
         await applyBackupData(remoteData);
         [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
           db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
@@ -1116,9 +1138,35 @@ async function githubSync(isAuto = false) {
         state.localDirty = false;
         render();
         await db.setConfig('lastGithubSync', remoteData.exportedAt);
+
+        // If local had newer readings, push merged result back to remote
+        if (hadNewer) {
+          const localData = await buildBackupData();
+          const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
+          const putRes = await fetch(SYNC_URL, {
+            method: 'PUT',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
+              content,
+              sha: remoteSha,
+            }),
+          });
+          if (!putRes.ok) {
+            const err = await putRes.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${putRes.status}`);
+          }
+          await db.setConfig('lastGithubSync', localData.exportedAt);
+        }
       } else if (state.localDirty) {
-        // Push (local is newer/different)
+        // Push: merge readings into local before push, then send
         const localData = await buildBackupData();
+        const { merged, hadNewer } = mergeReadings(localData.periods, remoteData.periods);
+        if (hadNewer) {
+          localData.periods = merged;
+          await db.replaceAllPeriods(merged);
+          state.periods = await db.getPeriods();
+        }
         const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
         const putRes = await fetch(SYNC_URL, {
           method: 'PUT',
@@ -1160,8 +1208,11 @@ async function githubSync(isAuto = false) {
     }
 
     if (!isAuto) {
-      btn.textContent = '✓ Synced';
-      setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+      const btn = document.getElementById('btn-sync');
+      if (btn) {
+        btn.textContent = '✓ Synced';
+        setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+      }
     }
   } catch (e) {
     if (!isAuto) {
