@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=2';
 import * as billing from './billing.js?v=3';
-import * as ui      from './ui.js?v=6';
+import * as ui      from './ui.js?v=7';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -23,10 +23,9 @@ const state = {
   },
 };
 
-let saveTimer    = null;
-let smsTapTimer  = null;
-let smsTapTarget = null;
-let popoverYear  = null;
+let saveTimer      = null;
+let longPressTimer = null;
+let popoverYear    = null;
 const undoHistory = [];
 const redoStack   = [];
 let snapshotPending = false;
@@ -244,27 +243,82 @@ function setupEvents() {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
   });
 
-  // Amount cell SMS trigger — double-tap required
-  document.addEventListener('click', e => {
-    if (!e.target.matches('.sms-trigger')) return;
-    const accountId = Number(e.target.dataset.accountId);
-    if (smsTapTarget === accountId && smsTapTimer !== null) {
-      clearTimeout(smsTapTimer);
-      smsTapTimer = null;
-      smsTapTarget = null;
-      e.target.classList.remove('sms-armed');
-      handleTextClick(accountId);
-    } else {
-      clearTimeout(smsTapTimer);
-      smsTapTarget = accountId;
-      e.target.classList.add('sms-armed');
-      smsTapTimer = setTimeout(() => {
-        document.querySelector(`.sms-trigger[data-account-id="${smsTapTarget}"]`)
-          ?.classList.remove('sms-armed');
-        smsTapTimer  = null;
-        smsTapTarget = null;
-      }, 400);
+  // Amount cell — long-press shows Copy / Send Text menu
+  let pressStartPos = null;
+  document.addEventListener('pointerdown', e => {
+    const cell = e.target.closest('td.col-amt[data-account-id]');
+    if (!cell || cell.textContent.trim() === '—') return;
+    pressStartPos = { x: e.clientX, y: e.clientY };
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      pressStartPos  = null;
+      showAmountMenu(cell, Number(cell.dataset.accountId));
+    }, 500);
+  });
+  document.addEventListener('pointermove', e => {
+    if (!longPressTimer || !pressStartPos) return;
+    if (Math.abs(e.clientX - pressStartPos.x) > 8 || Math.abs(e.clientY - pressStartPos.y) > 8) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+      pressStartPos  = null;
     }
+  });
+  document.addEventListener('pointerup',     () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; });
+  document.addEventListener('pointercancel', () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; });
+
+  // Dismiss amount menu on outside press
+  document.addEventListener('pointerdown', e => {
+    const menu = document.getElementById('amt-menu');
+    if (!menu.hidden && !menu.contains(e.target)) hideAmountMenu();
+  }, { capture: true });
+
+  // Suppress native context menu on amount cells (prevents iOS long-press copy menu)
+  document.addEventListener('contextmenu', e => {
+    if (e.target.closest('td.col-amt[data-account-id]')) e.preventDefault();
+  });
+
+  // Reposition when soft keyboard appears / disappears
+  window.visualViewport?.addEventListener('resize', () => {
+    const menu = document.getElementById('amt-menu');
+    if (!menu.hidden) repositionMenu(menu);
+  });
+
+  // Amount menu buttons
+  document.getElementById('amt-menu-copy').addEventListener('click', () => {
+    navigator.clipboard?.writeText(document.getElementById('amt-menu').dataset.amtText ?? '');
+    hideAmountMenu();
+  });
+  document.getElementById('amt-menu-sms').addEventListener('click', () => {
+    const menu      = document.getElementById('amt-menu');
+    const accountId = Number(menu.dataset.accountId);
+    const account   = state.accounts.find(a => a.id === accountId);
+    const phoneRow  = document.getElementById('amt-menu-phone-row');
+    const phoneInput = document.getElementById('amt-menu-phone');
+    const sendBtn   = document.getElementById('amt-menu-save-send');
+    phoneInput.value    = account?.phone ?? '';
+    sendBtn.textContent = account?.phone ? 'Send' : 'Save & Send';
+    phoneRow.style.display = 'flex';
+    repositionMenu(menu);
+    phoneInput.focus();
+  });
+  document.getElementById('amt-menu-save-send').addEventListener('click', async () => {
+    const menu      = document.getElementById('amt-menu');
+    const accountId = Number(menu.dataset.accountId);
+    const phone     = document.getElementById('amt-menu-phone').value.trim();
+    if (!phone) return;
+    const account = state.accounts.find(a => a.id === accountId);
+    if (account) {
+      account.phone = phone;
+      await db.saveAccount(account);
+      const amtEl = document.getElementById(`amt-${accountId}`);
+      if (amtEl) amtEl.classList.add('sms-trigger');
+      if (state.currentPeriod) {
+        const snap = state.currentPeriod.accountsSnapshot?.find(a => a.id === accountId);
+        if (snap) snap.phone = phone;
+      }
+    }
+    hideAmountMenu();
+    handleTextClick(accountId);
   });
 
   // Remove buttons in settings — event delegation
@@ -545,6 +599,46 @@ function clearSmsSentStatus() {
   ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
 }
 
+function repositionMenu(menu) {
+  const mH   = menu.offsetHeight;
+  const mW   = menu.offsetWidth;
+  const aBot = parseFloat(menu.dataset.anchorBottom);
+  const aTop = parseFloat(menu.dataset.anchorTop);
+  const aLeft = parseFloat(menu.dataset.anchorLeft);
+  const vH   = window.visualViewport?.height ?? window.innerHeight;
+  const vW   = window.visualViewport?.width  ?? window.innerWidth;
+  const top  = (aBot + 6 + mH <= vH - 8)
+    ? aBot + 6
+    : Math.max(8, aTop - mH - 6);
+  const left = Math.max(8, Math.min(aLeft, vW - mW - 8));
+  menu.style.top  = top  + 'px';
+  menu.style.left = left + 'px';
+}
+
+function showAmountMenu(cell, accountId) {
+  const menu    = document.getElementById('amt-menu');
+  const account = state.accounts.find(a => a.id === accountId);
+
+  menu.dataset.accountId    = accountId;
+  menu.dataset.amtText      = cell.textContent.trim();
+
+  const rect = cell.getBoundingClientRect();
+  menu.dataset.anchorTop    = rect.top;
+  menu.dataset.anchorBottom = rect.bottom;
+  menu.dataset.anchorLeft   = rect.left;
+
+  document.getElementById('amt-menu-phone-row').style.display = 'none';
+  document.getElementById('amt-menu-phone').value = '';
+  document.getElementById('amt-menu-sms').textContent = account?.phone ? 'Send Text' : 'Send Text…';
+
+  menu.hidden = false;
+  repositionMenu(menu);
+}
+
+function hideAmountMenu() {
+  document.getElementById('amt-menu').hidden = true;
+}
+
 function handleTextClick(accountId) {
   const account = accountsFor(state.currentPeriod).find(a => a.id === accountId);
   const period  = state.currentPeriod;
@@ -563,7 +657,7 @@ function handleTextClick(accountId) {
   const amtEl = document.getElementById(`amt-${accountId}`);
   if (amtEl) amtEl.classList.add('sms-sent');
 
-  window.location.href = `sms:${account.phone}&body=${body}`;
+  window.location.href = `sms:${account.phone}?body=${body}`;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

@@ -283,11 +283,41 @@ th.col-gal, th.col-amt { text-align: right; }
 .col-defective { color: var(--muted); }
 .col-defective input { color: var(--muted); }
 
+td.col-amt {
+  -webkit-user-select: none;
+  user-select: none;
+}
 .sms-trigger { cursor: pointer; }
 .sms-trigger:hover { color: var(--blue); }
-.sms-armed { color: var(--blue); font-weight: 600; }
 .sms-sent { color: #15803d; }
 .sms-sent::after { content: ' ✓'; font-size: 11px; opacity: 0.75; }
+
+.amt-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  padding: 6px;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.amt-context-menu[hidden] { display: none; }
+.amt-menu-btn {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 14px;
+  color: var(--text);
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+  width: 100%;
+}
+.amt-menu-btn:hover { background: var(--bg); }
 
 /* Inline reading inputs */
 .reading-input {

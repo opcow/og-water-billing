@@ -122,7 +122,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
   const startV = reading?.startReading ?? '';
   const endV   = reading?.endReading ?? '';
   const amtClass = `num col-amt${account.phone ? ' sms-trigger' : ''}${reading?.smsSentAt ? ' sms-sent' : ''}`;
-  const amtData  = account.phone ? ` data-account-id="${account.id}"` : '';
+  const amtData  = ` data-account-id="${account.id}"`;
 
   const defClass = account.meterDefective ? ' col-defective' : '';
 
