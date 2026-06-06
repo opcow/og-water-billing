@@ -134,6 +134,144 @@ function normalizeBilling() {
   activeSheet.getRange("C" + (lastRow + 3)).setValue(activeSheet.getRange("B" + (lastRow + 3)).getValue() + total);
 }
 
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Billing Tools')
+    .addItem('Export for PWA import…', 'exportForPWA')
+    .addToUi();
+}
+
+
+function exportForPWA() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tz = Session.getScriptTimeZone();
+
+  function toDateStr(v) {
+    return Utilities.formatDate(new Date(v), tz, 'yyyy-MM-dd');
+  }
+
+  function cleanRateTable(rows) {
+    return rows
+      .filter(r => r[0] !== '' && r[0] !== null && r[0] !== undefined)
+      .map(r => {
+        const out = r.slice(0, 3).map(Number);
+        if (typeof r[0] === 'string') out[0] = r[0]; // preserve "-"
+        for (let i = 3; i < r.length; i++) {
+          if (r[i] !== '' && r[i] !== null) out.push(Number(r[i]));
+        }
+        return out;
+      });
+  }
+
+  // Find last data sheet (has a Date in D1)
+  const sheets = ss.getSheets();
+  let latestSheet = null;
+  for (let i = sheets.length - 1; i >= 0; i--) {
+    if (sheets[i].getRange('D1').getValue() instanceof Date) {
+      latestSheet = sheets[i];
+      break;
+    }
+  }
+  if (!latestSheet) throw new Error('No billing sheets found.');
+
+  // Build accounts from latest sheet.
+  // I2 (lr0) points to the master meter row; lr0-2 and lr0-1 are totals/blank.
+  // Actual sub-accounts occupy rows fr0 through lr0-3.
+  const fr0         = latestSheet.getRange('H2').getValue();
+  const lr0         = latestSheet.getRange('I2').getValue();
+  const acctLr0     = lr0 - 3;
+  const nameVals    = latestSheet.getRange('A' + fr0 + ':A' + acctLr0).getValues();
+
+  const accounts = nameVals
+    .map(r => String(r[0]).trim())
+    .filter(n => n)
+    .map((name, i) => ({
+      id: i + 1, name, accountHolder: '', email: '', phone: '',
+      isMaster: false, sortOrder: i,
+    }));
+
+  const masterId   = accounts.length + 1;
+  const masterName = String(latestSheet.getRange('A' + lr0).getValue() || 'Master');
+  accounts.push({
+    id: masterId, name: masterName, accountHolder: '', email: '', phone: '',
+    isMaster: true, sortOrder: 99,
+  });
+
+  const nameToId = {};
+  accounts.forEach(a => { nameToId[a.name] = a.id; });
+
+  // Rate table from latest sheet
+  const tabAddr  = latestSheet.getRange('J2').getValue();
+  const rateTable = cleanRateTable(latestSheet.getRange(tabAddr).getValues());
+
+  // Iterate sheets → periods
+  const periods = [];
+  for (const sheet of sheets) {
+    const startVal = sheet.getRange('B1').getValue();
+    const endVal   = sheet.getRange('D1').getValue();
+    if (!(startVal instanceof Date) || !(endVal instanceof Date)) continue;
+
+    const fr    = sheet.getRange('H2').getValue();
+    const lr    = sheet.getRange('I2').getValue(); // master meter row
+    const acctLr = lr - 3;                        // last actual account row
+    if (!fr || !lr) continue;
+
+    const names  = sheet.getRange('A' + fr + ':A' + acctLr).getValues();
+    const starts = sheet.getRange('B' + fr + ':B' + acctLr).getValues();
+    const ends   = sheet.getRange('C' + fr + ':C' + acctLr).getValues();
+
+    const readings = names.map((r, i) => ({
+      accountId:    nameToId[String(r[0]).trim()] ?? (i + 1),
+      startReading: starts[i][0] !== '' ? Number(starts[i][0]) : null,
+      endReading:   ends[i][0]   !== '' ? Number(ends[i][0])   : null,
+    }));
+
+    const mStart = sheet.getRange('B' + lr).getValue();
+    const mEnd   = sheet.getRange('C' + lr).getValue();
+    readings.push({
+      accountId:    masterId,
+      startReading: mStart !== '' ? Number(mStart) : null,
+      endReading:   mEnd   !== '' ? Number(mEnd)   : null,
+    });
+
+    periods.push({
+      name:                Utilities.formatDate(endVal, tz, 'MMM yyyy'),
+      startDate:           toDateStr(startVal),
+      endDate:             toDateStr(endVal),
+      rateTableSnapshot:   JSON.parse(JSON.stringify(rateTable)),
+      accountsSnapshot:    JSON.parse(JSON.stringify(accounts)),
+      readings,
+      normalizationFactor: null,
+    });
+  }
+
+  // Write to Drive and show download link
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    rateTable,
+    lockStartReadings: true,
+    accounts,
+    periods,
+  };
+
+  const today    = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  const fileName = 'water-billing-export-' + today + '.json';
+  const file     = DriveApp.createFile(fileName,
+                     JSON.stringify(backup, null, 2), MimeType.PLAIN_TEXT);
+
+  const html = HtmlService.createHtmlOutput(
+    '<p style="font-family:sans-serif;margin:12px 0">Exported <b>' + periods.length +
+    ' periods</b>, <b>' + (accounts.length - 1) + ' accounts</b>.</p>' +
+    '<p><a href="' + file.getDownloadUrl() + '" target="_blank" ' +
+    'style="font-size:14px">⬇ Download ' + fileName + '</a></p>' +
+    '<p style="font-size:11px;color:#888">Also saved to your Google Drive root.</p>'
+  ).setWidth(440).setHeight(130);
+
+  SpreadsheetApp.getUi().showModalDialog(html, 'PWA Export Ready');
+}
+
+
 function onEdit(e) {
   const ss = e.source;
   const ref = e.range.getA1Notation();
