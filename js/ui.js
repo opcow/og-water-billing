@@ -316,6 +316,19 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null,
           <span class="data-desc">Select a previously downloaded backup file</span>
         </div>
       </div>
+    </div>
+
+    <div class="data-section">
+      <h3 class="data-section-title">Reset App</h3>
+      <div class="import-warning">
+        ⚠ This clears all local data (periods, accounts, rates). Sync data on GitHub is preserved — you can restore it after resetting.
+      </div>
+      <div class="data-actions" style="margin-top:10px">
+        <div class="data-action">
+          <button id="btn-reset-app" class="btn btn-danger">Reset app to first run</button>
+          <span class="data-desc">Clear all local data and restart</span>
+        </div>
+      </div>
     </div>`;
 }
 

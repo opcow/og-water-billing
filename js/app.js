@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=3';
 import * as billing from './billing.js?v=3';
-import * as ui      from './ui.js?v=9';
+import * as ui      from './ui.js?v=10';
 
 // Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
 
@@ -243,6 +243,7 @@ function setupEvents() {
     if (e.target.matches('#btn-link-data-file'))      chooseDataFile();
     if (e.target.matches('#btn-unlink-data-file'))    unlinkDataFile();
     if (e.target.matches('#btn-clear-sms-sent'))      clearSmsSentStatus();
+    if (e.target.matches('#btn-reset-app'))           resetApp();
   });
 
   // GitHub sync
@@ -385,11 +386,14 @@ function handleReadingInput(e) {
 
   let reading = period.readings.find(r => r.accountId === accountId);
   if (!reading) {
-    reading = { accountId, startReading: null, endReading: null };
+    reading = { accountId, startReading: null, endReading: null, endReadingAt: null };
     period.readings.push(reading);
   }
   const field = e.target.dataset.field === 'start' ? 'startReading' : 'endReading';
   reading[field] = val === '' ? null : Number(val);
+  if (field === 'endReading') {
+    reading.endReadingAt = Date.now();
+  }
 
   ui.updateRow(accountId, period, accountsFor(period));
   ui.updateTotals(period, accountsFor(period));
@@ -569,7 +573,7 @@ async function confirmPeriod() {
       endDate:   endStr,
       rateTableSnapshot: JSON.parse(JSON.stringify(state.rateTable)),
       accountsSnapshot: JSON.parse(JSON.stringify(state.accounts)),
-      readings: state.accounts.map(a => ({ accountId: a.id, startReading: null, endReading: null })),
+      readings: state.accounts.map(a => ({ accountId: a.id, startReading: null, endReading: null, endReadingAt: null })),
       normalizationFactor: null,
     };
   } else {
@@ -716,7 +720,7 @@ function handleTextClick(accountId) {
 
   let reading = period.readings.find(r => r.accountId === accountId);
   if (!reading) {
-    reading = { accountId, startReading: null, endReading: null };
+    reading = { accountId, startReading: null, endReading: null, endReadingAt: null };
     period.readings.push(reading);
   }
 
@@ -1197,6 +1201,27 @@ async function unlinkDataFile() {
   await db.setConfig('dataFileHandle', null);
   state.dataFileHandle = null;
   ui.renderDataTab(!!state.currentPeriodId, null);
+}
+
+async function resetApp() {
+  if (!confirm('Clear all local data and restart? Sync data on GitHub is preserved.')) return;
+
+  try {
+    // Clear IndexedDB
+    const dbs = await indexedDB.databases();
+    for (const db of dbs) {
+      indexedDB.deleteDatabase(db.name);
+    }
+    // Clear service worker cache
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+    }
+    // Reload to start fresh
+    location.reload();
+  } catch (e) {
+    alert(`Reset failed: ${e.message}`);
+  }
 }
 
 // ── Service worker ────────────────────────────────────────────────────────────

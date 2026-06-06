@@ -46,6 +46,7 @@ export function newPeriod(prevPeriod, accounts, rateTable) {
         accountId: a.id,
         startReading: start,
         endReading: a.meterDefective ? start : null,
+        endReadingAt: null,
       };
     }),
     normalizationFactor: null,
