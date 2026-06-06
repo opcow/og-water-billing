@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=2';
 import * as billing from './billing.js?v=3';
-import * as ui      from './ui.js?v=3';
+import * as ui      from './ui.js?v=5';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -82,7 +82,7 @@ async function init() {
   setupEvents();
   registerSW();
   document.getElementById('btn-theme').textContent =
-    document.documentElement.classList.contains('dark') ? '🌙' : '☀';
+    document.documentElement.classList.contains('dark') ? '☽' : '☀';
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ function handleReadingInput(e) {
   const field = e.target.dataset.field === 'start' ? 'startReading' : 'endReading';
   reading[field] = val === '' ? null : Number(val);
 
-  ui.updateRow(accountId, period);
+  ui.updateRow(accountId, period, accountsFor(period));
   ui.updateTotals(period, accountsFor(period));
 
   clearTimeout(saveTimer);
@@ -563,7 +563,7 @@ function handleTextClick(accountId) {
 function toggleTheme() {
   const dark = document.documentElement.classList.toggle('dark');
   localStorage.setItem('theme', dark ? 'dark' : 'light');
-  document.getElementById('btn-theme').textContent = dark ? '🌙' : '☀';
+  document.getElementById('btn-theme').textContent = dark ? '☽' : '☀';
 }
 
 function openSettings() {

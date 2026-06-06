@@ -117,7 +117,8 @@ function updateSortIndicators({ column, dir }) {
 
 function rowHTML(account, reading, period, lockStartReadings) {
   const g      = reading ? getGallons(reading, period.normalizationFactor) : null;
-  const amount = g != null ? calcBill(g, period.rateTableSnapshot) : null;
+  const amount = account.fixedCharge != null ? account.fixedCharge
+               : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
   const startV = reading?.startReading ?? '';
   const endV   = reading?.endReading ?? '';
   const amtClass = `num col-amt${account.phone ? ' sms-trigger' : ''}${reading?.smsSentAt ? ' sms-sent' : ''}`;
@@ -153,11 +154,13 @@ function rowHTML(account, reading, period, lockStartReadings) {
     </tr>`;
 }
 
-export function updateRow(accountId, period) {
+export function updateRow(accountId, period, accounts) {
   const reading = period.readings.find(r => r.accountId === accountId);
   if (!reading) return;
+  const account = accounts?.find(a => a.id === accountId);
   const g      = getGallons(reading, period.normalizationFactor);
-  const amount = g != null ? calcBill(g, period.rateTableSnapshot) : null;
+  const amount = account?.fixedCharge != null ? account.fixedCharge
+               : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
   const galEl  = document.getElementById(`gal-${accountId}`);
   const amtEl  = document.getElementById(`amt-${accountId}`);
   if (galEl) galEl.textContent = g != null ? formatNumber(g) : '—';
@@ -176,9 +179,11 @@ function renderTotals(period, nonMaster, readMap) {
   let totalGal = 0, totalAmt = 0, hasAny = false;
   for (const a of nonMaster) {
     const r = readMap.get(a.id);
-    if (!r) continue;
-    const g = getGallons(r, period.normalizationFactor);
-    if (g != null) { totalGal += g; totalAmt += calcBill(g, period.rateTableSnapshot); hasAny = true; }
+    if (!r && a.fixedCharge == null) continue;
+    const g   = r ? getGallons(r, period.normalizationFactor) : null;
+    const amt = a.fixedCharge != null ? a.fixedCharge
+              : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
+    if (amt != null) { totalGal += g ?? 0; totalAmt += amt; hasAny = true; }
   }
   document.getElementById('billing-foot').innerHTML = `
     <tr class="totals-row">
@@ -205,7 +210,7 @@ export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings
   renderAccountsEditor(accounts);
   renderDataTab(hasPeriod, fileHandle, githubConfig, maxSheets);
   renderMessagesTab(smsTemplate, hasPeriod);
-  switchTab('rates');
+  switchTab('accounts');
 }
 
 export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null, maxSheets = 60) {
@@ -421,6 +426,7 @@ function accountRowHTML(a) {
       </div>
       <div class="acc-secondary">
         <input type="tel" class="acc-phone" value="${esc(a.phone ?? '')}" placeholder="Phone (optional)" style="width:130px">
+        <input type="number" class="acc-fixed-charge" value="${a.fixedCharge != null ? a.fixedCharge : ''}" placeholder="$ fixed" min="0" step="0.01" style="width:90px">
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;color:var(--text)">
           <input type="checkbox" class="acc-defective"${a.meterDefective ? ' checked' : ''} style="width:auto;margin:0">
           meter defective
@@ -539,6 +545,7 @@ export function collectSettings() {
       name:          row.querySelector('.acc-name')?.value.trim()   || '',
       accountHolder: row.querySelector('.acc-holder')?.value.trim() || '',
       phone:         row.querySelector('.acc-phone')?.value.trim()  || '',
+      fixedCharge:   (() => { const v = parseFloat(row.querySelector('.acc-fixed-charge')?.value); return isNaN(v) ? null : v; })(),
       meterDefective: row.querySelector('.acc-defective')?.checked ?? false,
       isMaster:      false,
       sortOrder:     i,

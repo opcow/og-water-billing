@@ -477,7 +477,8 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 
 .account-row input[type="text"],
 .account-row input[type="email"],
-.account-row input[type="tel"] {
+.account-row input[type="tel"],
+.account-row input[type="number"] {
   padding: 6px 9px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
