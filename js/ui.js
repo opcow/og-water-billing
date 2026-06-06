@@ -47,7 +47,7 @@ export function renderPeriodPopover(periods, selectedId, viewYear) {
 
 // ── Billing table ─────────────────────────────────────────────────────────────
 
-export function renderPeriod(period, accounts, sortConfig = { column: null, dir: 'asc' }, lockStartReadings = false) {
+export function renderPeriod(period, accounts, sortConfig = { column: null, dir: 'asc' }, lockStartReadings = false, showMasterSection = true) {
   const datesEl = document.getElementById('period-dates');
   if (!period) {
     datesEl.innerHTML = '';
@@ -75,7 +75,7 @@ export function renderPeriod(period, accounts, sortConfig = { column: null, dir:
   updateSortIndicators(sortConfig);
 
   const masterSection = document.getElementById('master-section');
-  if (masters.length > 0) {
+  if (showMasterSection && masters.length > 0) {
     masterSection.hidden = false;
     document.getElementById('master-body').innerHTML =
       masters.map(a => rowHTML(a, readMap.get(a.id), period, lockStartReadings)).join('');
@@ -197,7 +197,7 @@ function renderTotals(period, nonMaster, readMap) {
 
 // ── Settings modal ────────────────────────────────────────────────────────────
 
-export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 60) {
+export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 60, showMasterSection = true) {
   const baseCharge  = rateTable[0][3] ?? 0;
   const billingDay  = rateTable[0][4] ?? 3;
   const dueDay      = rateTable[0][5] ?? 20;
@@ -205,6 +205,7 @@ export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings
   document.getElementById('billing-day').value  = billingDay;
   document.getElementById('due-day').value       = dueDay;
   document.getElementById('lock-start-readings').checked = !!lockStartReadings;
+  document.getElementById('show-master-section').checked = !!showMasterSection;
 
   renderRateTiers(rateTable);
   renderAccountsEditor(accounts);
@@ -554,8 +555,9 @@ export function collectSettings() {
     return acc;
   }).filter(a => a.name);
 
-  const lockStartReadings = document.getElementById('lock-start-readings')?.checked ?? false;
+  const lockStartReadings  = document.getElementById('lock-start-readings')?.checked ?? false;
+  const showMasterSection  = document.getElementById('show-master-section')?.checked ?? true;
   const smsTemplate = document.getElementById('sms-template')?.value.trim() || null;
   const maxSheets = Math.min(120, Math.max(3, parseInt(document.getElementById('max-sheets')?.value, 10) || 60));
-  return { rateTable, accounts, lockStartReadings, smsTemplate, maxSheets };
+  return { rateTable, accounts, lockStartReadings, showMasterSection, smsTemplate, maxSheets };
 }

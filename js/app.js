@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=2';
 import * as billing from './billing.js?v=3';
-import * as ui      from './ui.js?v=5';
+import * as ui      from './ui.js?v=6';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -17,6 +17,7 @@ const state = {
   githubConfig: null,
   smsTemplate: null,
   maxSheets: 60,
+  showMasterSection: true,
   get currentPeriod() {
     return this.periods.find(p => p.id === this.currentPeriodId) ?? null;
   },
@@ -41,13 +42,14 @@ function accountsFor(period) {
 
 async function init() {
   await db.seedIfEmpty();
-  [state.periods, state.accounts, state.rateTable, state.lockStartReadings, state.smsTemplate, state.maxSheets] = await Promise.all([
+  [state.periods, state.accounts, state.rateTable, state.lockStartReadings, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
     db.getPeriods(),
     db.getAccounts(),
     db.getConfig('rateTable'),
     db.getConfig('lockStartReadings').then(v => v ?? true),
     db.getConfig('smsTemplate').then(v => v ?? null),
     db.getConfig('maxSheets').then(v => v ?? 60),
+    db.getConfig('showMasterSection').then(v => v ?? true),
   ]);
   if (state.periods.length > 0) {
     state.currentPeriodId = state.periods[state.periods.length - 1].id;
@@ -101,7 +103,7 @@ function render() {
   if (!hasPeriods) return;
 
   ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-  ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings);
+  ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -137,7 +139,7 @@ function setupEvents() {
     undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
     document.getElementById('period-popover').hidden = true;
     ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings);
+    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
   });
 
   document.addEventListener('click', () => {
@@ -160,7 +162,7 @@ function setupEvents() {
       state.sortConfig = { column: col, dir: 'asc' };
     }
     if (state.currentPeriod) {
-      ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings);
+      ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
     }
   });
 
@@ -335,7 +337,7 @@ function undo() {
   period.readings = undoHistory.pop();
   snapshotPending = true;
   flushSave(period);
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
+  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updateUndoButtons();
 }
 
@@ -346,7 +348,7 @@ function redo() {
   period.readings = redoStack.pop();
   snapshotPending = true;
   flushSave(period);
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
+  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updateUndoButtons();
 }
 
@@ -431,6 +433,11 @@ async function confirmPeriod() {
 
   if (_periodIsFirst) {
     const [y, m, d] = endStr.split('-').map(Number);
+    // Treat the chosen day as the billing day going forward
+    if (state.rateTable?.[0]) {
+      state.rateTable[0][4] = d;
+      await db.setConfig('rateTable', state.rateTable);
+    }
     const prevMonthSameDay = new Date(y, m - 2, d);
     prevMonthSameDay.setDate(prevMonthSameDay.getDate() + 1);
     const startStr = dateStr(prevMonthSameDay);
@@ -479,7 +486,7 @@ async function handleNormalize() {
     await db.savePeriod(period);
     const idx = state.periods.findIndex(p => p.id === period.id);
     if (idx >= 0) state.periods[idx] = period;
-    ui.renderPeriod(period, state.accounts, state.sortConfig, state.lockStartReadings);
+    ui.renderPeriod(period, state.accounts, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     return;
   }
 
@@ -524,7 +531,7 @@ async function confirmNormalize() {
   const idx = state.periods.findIndex(p => p.id === period.id);
   if (idx >= 0) state.periods[idx] = period;
   document.getElementById('normalize-dialog').close();
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
+  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
   syncToFile();
 }
 
@@ -535,7 +542,7 @@ function clearSmsSentStatus() {
   if (!period) return;
   period.readings.forEach(r => { delete r.smsSentAt; });
   flushSave(period);
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings);
+  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
 }
 
 function handleTextClick(accountId) {
@@ -573,7 +580,7 @@ function toggleTheme() {
 }
 
 function openSettings() {
-  ui.renderSettings(state.rateTable, state.accounts, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate, state.maxSheets);
+  ui.renderSettings(state.rateTable, state.accounts, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate, state.maxSheets, state.showMasterSection);
   document.getElementById('settings-dialog').showModal();
 }
 
@@ -597,7 +604,9 @@ async function saveSettings() {
   state.smsTemplate = smsTemplate;
   state.lockStartReadings = lockStartReadings;
   state.maxSheets = result.maxSheets;
+  state.showMasterSection = result.showMasterSection;
   await db.setConfig('maxSheets', result.maxSheets);
+  await db.setConfig('showMasterSection', result.showMasterSection);
 
   state.rateTable  = rateTable;
   state.accounts   = await db.getAccounts();
