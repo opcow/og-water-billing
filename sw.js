@@ -1,4 +1,4 @@
-const CACHE = 'water-billing-v47';
+const CACHE = 'water-billing-v48';
 
 const ASSETS = [
   './',
@@ -8,9 +8,11 @@ const ASSETS = [
   './js/billing.js?v=3',
   './js/db.js?v=2',
   './js/ui.js?v=5',
-  './js/app.js?v=38',
+  './js/app.js?v=39',
   './js/vendor/xlsx.full.min.js',
   './icons/icon.svg',
+  './icons/day-night-dark.png',
+  './icons/day-night-light.png',
 ];
 
 self.addEventListener('install', e => {

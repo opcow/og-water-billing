@@ -81,8 +81,9 @@ async function init() {
   render();
   setupEvents();
   registerSW();
-  document.getElementById('btn-theme').textContent =
-    document.documentElement.classList.contains('dark') ? '☽' : '☀';
+  document.getElementById('btn-theme').innerHTML = themeIconHTML(
+    document.documentElement.classList.contains('dark'));
+
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -560,10 +561,15 @@ function handleTextClick(accountId) {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+function themeIconHTML(dark) {
+  const name = dark ? 'day-night-light' : 'day-night-dark';
+  return `<img src="icons/${name}.png" style="height:22px;width:auto;display:block" alt="">`;
+}
+
 function toggleTheme() {
   const dark = document.documentElement.classList.toggle('dark');
   localStorage.setItem('theme', dark ? 'dark' : 'light');
-  document.getElementById('btn-theme').textContent = dark ? '☽' : '☀';
+  document.getElementById('btn-theme').innerHTML = themeIconHTML(dark);
 }
 
 function openSettings() {
