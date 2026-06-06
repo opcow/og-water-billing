@@ -1,4 +1,4 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=2';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=3';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -123,9 +123,11 @@ function rowHTML(account, reading, period, lockStartReadings) {
   const amtClass = `num col-amt${account.phone ? ' sms-trigger' : ''}${reading?.smsSentAt ? ' sms-sent' : ''}`;
   const amtData  = account.phone ? ` data-account-id="${account.id}"` : '';
 
+  const defClass = account.meterDefective ? ' col-defective' : '';
+
   const startCell = lockStartReadings
-    ? `<td class="num col-start">${startV !== '' ? startV : '—'}</td>`
-    : `<td class="num col-start" style="padding:4px 14px">
+    ? `<td class="num col-start${defClass}">${startV !== '' ? startV : '—'}</td>`
+    : `<td class="num col-start${defClass}" style="padding:4px 14px">
         <input type="number" class="reading-input start-reading-input"
           data-account-id="${account.id}"
           data-field="start"
@@ -138,7 +140,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
     <tr data-account-id="${account.id}">
       <td>${esc(account.name)}</td>
       ${startCell}
-      <td class="num col-end" style="padding:4px 14px">
+      <td class="num col-end${defClass}" style="padding:4px 14px">
         <input type="number" class="reading-input"
           data-account-id="${account.id}"
           data-field="end"
@@ -418,7 +420,11 @@ function accountRowHTML(a) {
         <button class="btn btn-danger btn-sm remove-account" style="padding:3px 8px;font-size:12px">×</button>
       </div>
       <div class="acc-secondary">
-        <input type="tel" class="acc-phone" value="${esc(a.phone ?? '')}" placeholder="Phone (optional)">
+        <input type="tel" class="acc-phone" value="${esc(a.phone ?? '')}" placeholder="Phone (optional)" style="width:130px">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;color:var(--text)">
+          <input type="checkbox" class="acc-defective"${a.meterDefective ? ' checked' : ''} style="width:auto;margin:0">
+          meter defective
+        </label>
       </div>
     </div>`;
 }
@@ -533,6 +539,7 @@ export function collectSettings() {
       name:          row.querySelector('.acc-name')?.value.trim()   || '',
       accountHolder: row.querySelector('.acc-holder')?.value.trim() || '',
       phone:         row.querySelector('.acc-phone')?.value.trim()  || '',
+      meterDefective: row.querySelector('.acc-defective')?.checked ?? false,
       isMaster:      false,
       sortOrder:     i,
     };

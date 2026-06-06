@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=2';
-import * as billing from './billing.js?v=2';
-import * as ui      from './ui.js?v=2';
+import * as billing from './billing.js?v=3';
+import * as ui      from './ui.js?v=3';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -365,8 +365,30 @@ async function trimOldPeriods() {
 
 // ── New period ────────────────────────────────────────────────────────────────
 
-function handleNewPeriod() {
-  openPeriodDialog(false);
+async function handleNewPeriod() {
+  const latest = state.periods[state.periods.length - 1];
+  if (!latest) return;
+
+  const billingDay = state.rateTable?.[0]?.[4] ?? 3;
+  const prevEnd    = new Date(...latest.endDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v));
+  const nm         = new Date(prevEnd.getFullYear(), prevEnd.getMonth() + 1, 1);
+  const nextDay    = Math.min(billingDay, new Date(nm.getFullYear(), nm.getMonth() + 1, 0).getDate());
+  const nextEnd    = new Date(nm.getFullYear(), nm.getMonth(), nextDay);
+  const endStr     = dateStr(nextEnd);
+
+  const [y, m, d] = endStr.split('-').map(Number);
+  const period = billing.newPeriod(latest, state.accounts, state.rateTable);
+  period.endDate          = endStr;
+  period.name             = new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  period.accountsSnapshot = JSON.parse(JSON.stringify(state.accounts));
+
+  const id = await db.savePeriod(period);
+  period.id = id;
+  state.periods.push(period);
+  state.currentPeriodId = id;
+  render();
+  await trimOldPeriods();
+  syncToFile();
 }
 
 async function handleDeletePeriod() {

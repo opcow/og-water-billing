@@ -40,11 +40,14 @@ export function newPeriod(prevPeriod, accounts, rateTable) {
     startDate: toDateStr(startDate),
     endDate: toDateStr(endDate),
     rateTableSnapshot: JSON.parse(JSON.stringify(rateTable)),
-    readings: accounts.map(a => ({
-      accountId: a.id,
-      startReading: prevMap.get(a.id) ?? null,
-      endReading: null,
-    })),
+    readings: accounts.map(a => {
+      const start = prevMap.get(a.id) ?? null;
+      return {
+        accountId: a.id,
+        startReading: start,
+        endReading: a.meterDefective ? start : null,
+      };
+    }),
     normalizationFactor: null,
   };
 }

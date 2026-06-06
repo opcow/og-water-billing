@@ -280,6 +280,8 @@ th.col-start, th.col-end { text-align: center; }
 .col-gal     { width: 84px; }
 .col-amt     { width: 100px; }
 th.col-gal, th.col-amt { text-align: right; }
+.col-defective { color: var(--muted); }
+.col-defective input { color: var(--muted); }
 
 .sms-trigger { cursor: pointer; }
 .sms-trigger:hover { color: var(--blue); }
@@ -468,6 +470,9 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 }
 .acc-secondary {
   padding-left: 28px; /* align under name/holder columns, past the drag handle */
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .account-row input[type="text"],
