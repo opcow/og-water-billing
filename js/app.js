@@ -50,7 +50,7 @@ function buildSyncUrl() {
 function showQRDialog() {
   const el = document.getElementById('qr-canvas');
   el.innerHTML = '';
-  new QRCode(el, { text: buildSyncUrl(), width: 220, height: 220 });
+  new QRCode(el, { text: buildSyncUrl(), width: 300, height: 300 });
   document.getElementById('qr-dialog').showModal();
 }
 
