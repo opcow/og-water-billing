@@ -300,12 +300,12 @@ function setupEvents() {
   // GitHub sync
   document.getElementById('btn-sync').addEventListener('click', () => githubSync());
 
-  // QR code dialog
-  document.getElementById('btn-show-qr').addEventListener('click', showQRDialog);
-  document.getElementById('close-qr-dialog').addEventListener('click', () =>
-    document.getElementById('qr-dialog').close());
-  document.getElementById('btn-copy-sync-link').addEventListener('click', () =>
-    navigator.clipboard.writeText(buildSyncUrl()));
+  // QR code dialog (use event delegation for dynamic button visibility)
+  document.addEventListener('click', e => {
+    if (e.target.id === 'btn-show-qr') showQRDialog();
+    if (e.target.id === 'close-qr-dialog') document.getElementById('qr-dialog').close();
+    if (e.target.id === 'btn-copy-sync-link') navigator.clipboard.writeText(buildSyncUrl());
+  });
 
   // Period creation dialog
   document.getElementById('close-period-dialog').addEventListener('click', closePeriodDialog);
