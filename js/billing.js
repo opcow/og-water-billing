@@ -22,7 +22,7 @@ export function getGallons(reading, normFactor) {
   return Math.floor(raw * normFactor / 10) * 10;
 }
 
-export function newPeriod(prevPeriod, accounts, rateTable) {
+export function newPeriod(prevPeriod, accounts, masterMeter, rateTable) {
   const billingDay = rateTable[0][4] ?? 3;
   const prevEnd = parseLocalDate(prevPeriod.endDate);
 
@@ -34,6 +34,7 @@ export function newPeriod(prevPeriod, accounts, rateTable) {
   endDate.setDate(billingDay);
 
   const prevMap = new Map((prevPeriod.readings || []).map(r => [r.accountId, r.endReading]));
+  const prevMasterEnd = prevPeriod.masterReading?.endReading ?? null;
 
   return {
     name: monthLabel(endDate),
@@ -49,6 +50,11 @@ export function newPeriod(prevPeriod, accounts, rateTable) {
         endReadingAt: null,
       };
     }),
+    masterReading: {
+      startReading: prevMasterEnd,
+      endReading: masterMeter?.meterDefective ? prevMasterEnd : null,
+      endReadingAt: null,
+    },
     normalizationFactor: null,
   };
 }

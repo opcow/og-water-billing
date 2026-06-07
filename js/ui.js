@@ -47,7 +47,7 @@ export function renderPeriodPopover(periods, selectedId, viewYear) {
 
 // ── Billing table ─────────────────────────────────────────────────────────────
 
-export function renderPeriod(period, accounts, sortConfig = { column: null, dir: 'asc' }, lockStartReadings = false, showMasterSection = true) {
+export function renderPeriod(period, accounts, masterMeter, sortConfig = { column: null, dir: 'asc' }, lockStartReadings = false, showMasterSection = true) {
   const datesEl = document.getElementById('period-dates');
   if (!period) {
     datesEl.innerHTML = '';
@@ -64,21 +64,19 @@ export function renderPeriod(period, accounts, sortConfig = { column: null, dir:
   datesEl.innerHTML = `${formatDate(period.startDate)} – ${formatDate(period.endDate)}${normBadge}`;
 
   const readMap = new Map((period.readings || []).map(r => [r.accountId, r]));
-  const nonMaster = accounts.filter(a => !a.isMaster);
-  const masters   = accounts.filter(a => a.isMaster);
 
-  const sorted = applySortConfig(nonMaster, period, readMap, sortConfig);
+  const sorted = applySortConfig(accounts, period, readMap, sortConfig);
   document.getElementById('billing-body').innerHTML =
     sorted.map(a => rowHTML(a, readMap.get(a.id), period, lockStartReadings)).join('');
 
-  renderTotals(period, nonMaster, readMap);
+  renderTotals(period, accounts, readMap);
   updateSortIndicators(sortConfig);
 
   const masterSection = document.getElementById('master-section');
-  if (showMasterSection && masters.length > 0) {
+  if (showMasterSection && masterMeter) {
     masterSection.hidden = false;
     document.getElementById('master-body').innerHTML =
-      masters.map(a => rowHTML(a, readMap.get(a.id), period, lockStartReadings)).join('');
+      rowHTML(masterMeter, period.masterReading, period, lockStartReadings);
   } else {
     masterSection.hidden = true;
   }
@@ -170,9 +168,24 @@ export function updateRow(accountId, period, accounts) {
   }
 }
 
+export function updateMasterRow(period, masterMeter) {
+  const reading = period.masterReading;
+  if (!reading) return;
+  const g      = getGallons(reading, period.normalizationFactor);
+  const amount = masterMeter?.fixedCharge != null ? masterMeter.fixedCharge
+               : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
+  const galEl  = document.getElementById('gal-0');
+  const amtEl  = document.getElementById('amt-0');
+  if (galEl) galEl.textContent = g != null ? formatNumber(g) : '—';
+  if (amtEl) {
+    amtEl.textContent = amount != null ? formatCurrency(amount) : '—';
+    amtEl.classList.toggle('sms-sent', !!reading.smsSentAt);
+  }
+}
+
 export function updateTotals(period, accounts) {
   const readMap = new Map((period.readings || []).map(r => [r.accountId, r]));
-  renderTotals(period, accounts.filter(a => !a.isMaster), readMap);
+  renderTotals(period, accounts, readMap);
 }
 
 function renderTotals(period, nonMaster, readMap) {
@@ -197,7 +210,7 @@ function renderTotals(period, nonMaster, readMap) {
 
 // ── Settings modal ────────────────────────────────────────────────────────────
 
-export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 12, showMasterSection = true) {
+export function renderSettings(rateTable, accounts, masterMeter, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 12, showMasterSection = true) {
   const baseCharge  = rateTable[0][3] ?? 0;
   const billingDay  = rateTable[0][4] ?? 3;
   const dueDay      = rateTable[0][5] ?? 20;
@@ -208,7 +221,7 @@ export function renderSettings(rateTable, accounts, hasPeriod, lockStartReadings
   document.getElementById('show-master-section').checked = !!showMasterSection;
 
   renderRateTiers(rateTable);
-  renderAccountsEditor(accounts);
+  renderAccountsEditor(accounts, masterMeter);
   renderDataTab(hasPeriod, fileHandle, githubConfig, maxSheets);
   renderMessagesTab(smsTemplate, hasPeriod);
   switchTab('accounts');
@@ -418,25 +431,32 @@ export function addRateTierRow() {
   tbody.insertBefore(newRow, finalRow);
 }
 
-function renderAccountsEditor(accounts) {
+function renderAccountsEditor(accounts, masterMeter) {
   const container = document.getElementById('accounts-editor');
   container.innerHTML = `
     <div class="acc-header">
       <span></span>
       <span>Unit / Name</span><span>Account Holder</span><span></span>
     </div>
-    ${accounts.filter(a => !a.isMaster).map(a => accountRowHTML(a)).join('')}`;
+    ${accounts.map(a => accountRowHTML(a)).join('')}
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+      <div class="acc-header">
+        <span></span>
+        <span style="font-weight:bold">Master Meter</span><span></span><span></span>
+      </div>
+      ${accountRowHTML(masterMeter, true)}
+    </div>`;
   initDragSort(container);
 }
 
-function accountRowHTML(a) {
+function accountRowHTML(a, isMaster) {
   return `
-    <div class="account-row" data-id="${a.id ?? ''}">
+    <div class="account-row" data-id="${a.id ?? ''}"${isMaster ? ' data-master="true"' : ''}>
       <div class="acc-primary">
-        <span class="drag-handle" draggable="true" title="Drag to reorder"></span>
+        <span class="drag-handle"${isMaster ? ' style="visibility:hidden"' : ' draggable="true" title="Drag to reorder"'}></span>
         <input type="text"  class="acc-name"   value="${esc(a.name)}"            placeholder="Unit / account name">
         <input type="text"  class="acc-holder" value="${esc(a.accountHolder ?? '')}" placeholder="Account holder name">
-        <button class="btn btn-danger btn-sm remove-account" style="padding:3px 8px;font-size:12px">×</button>
+        <button class="btn btn-danger btn-sm remove-account"${isMaster ? ' style="visibility:hidden"' : ''} style="padding:3px 8px;font-size:12px">×</button>
       </div>
       <div class="acc-secondary">
         <input type="tel" class="acc-phone" value="${esc(a.phone ?? '')}" placeholder="Phone (optional)" style="width:130px">
@@ -452,7 +472,7 @@ function accountRowHTML(a) {
 export function addAccountRow() {
   const container = document.getElementById('accounts-editor');
   const div = document.createElement('div');
-  div.innerHTML = accountRowHTML({ id: undefined, name: '', accountHolder: '', phone: '', isMaster: false });
+  div.innerHTML = accountRowHTML({ id: undefined, name: '', accountHolder: '', phone: '', meterDefective: false, fixedCharge: null });
   container.appendChild(div.firstElementChild);
 }
 
@@ -553,7 +573,9 @@ export function collectSettings() {
   }
 
   const accountRows = document.querySelectorAll('#accounts-editor .account-row');
+  let masterMeter = null;
   const accounts = Array.from(accountRows).map((row, i) => {
+    const isMaster = row.dataset.master === 'true';
     const idVal = row.dataset.id;
     const acc = {
       name:          row.querySelector('.acc-name')?.value.trim()   || '',
@@ -561,16 +583,19 @@ export function collectSettings() {
       phone:         row.querySelector('.acc-phone')?.value.trim()  || '',
       fixedCharge:   (() => { const v = parseFloat(row.querySelector('.acc-fixed-charge')?.value); return isNaN(v) ? null : v; })(),
       meterDefective: row.querySelector('.acc-defective')?.checked ?? false,
-      isMaster:      false,
       sortOrder:     i,
     };
     if (idVal) acc.id = Number(idVal);
+    if (isMaster) {
+      masterMeter = { id: 0, ...acc };
+      return null;
+    }
     return acc;
-  }).filter(a => a.name);
+  }).filter(a => a && a.name);
 
   const lockStartReadings  = document.getElementById('lock-start-readings')?.checked ?? false;
   const showMasterSection  = document.getElementById('show-master-section')?.checked ?? true;
   const smsTemplate = document.getElementById('sms-template')?.value.trim() || null;
   const maxSheets = Math.min(120, Math.max(3, parseInt(document.getElementById('max-sheets')?.value, 10) || 60));
-  return { rateTable, accounts, lockStartReadings, showMasterSection, smsTemplate, maxSheets };
+  return { rateTable, accounts, masterMeter, lockStartReadings, showMasterSection, smsTemplate, maxSheets };
 }

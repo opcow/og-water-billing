@@ -186,16 +186,14 @@ function exportForPWA() {
     .map(r => String(r[0]).trim())
     .filter(n => n)
     .map((name, i) => ({
-      id: i + 1, name, accountHolder: '', phone: '',
-      isMaster: false, sortOrder: i,
+      id: i + 1, name, accountHolder: '', phone: '', sortOrder: i,
     }));
 
-  const masterId   = accounts.length + 1;
   const masterName = String(latestSheet.getRange('A' + lr0).getValue() || 'Master');
-  accounts.push({
-    id: masterId, name: masterName, accountHolder: '', phone: '',
-    isMaster: true, sortOrder: 99,
-  });
+  const masterMeter = {
+    id: 0, name: masterName, accountHolder: '', phone: '',
+    meterDefective: false, fixedCharge: null,
+  };
 
   const nameToId = {};
   accounts.forEach(a => { nameToId[a.name] = a.id; });
@@ -228,11 +226,11 @@ function exportForPWA() {
 
     const mStart = sheet.getRange('B' + lr).getValue();
     const mEnd   = sheet.getRange('C' + lr).getValue();
-    readings.push({
-      accountId:    masterId,
+    const masterReading = {
       startReading: mStart !== '' ? Number(mStart) : null,
       endReading:   mEnd   !== '' ? Number(mEnd)   : null,
-    });
+      endReadingAt: null,
+    };
 
     periods.push({
       name:                Utilities.formatDate(endVal, tz, 'MMM yyyy'),
@@ -241,6 +239,7 @@ function exportForPWA() {
       rateTableSnapshot:   JSON.parse(JSON.stringify(rateTable)),
       accountsSnapshot:    JSON.parse(JSON.stringify(accounts)),
       readings,
+      masterReading,
       normalizationFactor: null,
     });
   }
@@ -252,6 +251,7 @@ function exportForPWA() {
     rateTable,
     lockStartReadings: true,
     accounts,
+    masterMeter,
     periods,
   };
 
@@ -262,7 +262,7 @@ function exportForPWA() {
 
   const html = HtmlService.createHtmlOutput(
     '<p style="font-family:sans-serif;margin:12px 0">Exported <b>' + periods.length +
-    ' periods</b>, <b>' + (accounts.length - 1) + ' accounts</b>.</p>' +
+    ' periods</b>, <b>' + accounts.length + ' accounts</b>.</p>' +
     '<p><a href="' + file.getDownloadUrl() + '" target="_blank" ' +
     'style="font-size:14px">⬇ Download ' + fileName + '</a></p>' +
     '<p style="font-size:11px;color:#888">Also saved to your Google Drive root.</p>'

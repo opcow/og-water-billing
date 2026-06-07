@@ -1,6 +1,6 @@
-import * as db      from './db.js?v=3';
-import * as billing from './billing.js?v=3';
-import * as ui      from './ui.js?v=10';
+import * as db      from './db.js?v=4';
+import * as billing from './billing.js?v=4';
+import * as ui      from './ui.js?v=11';
 
 // Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
 
@@ -11,6 +11,7 @@ const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 const state = {
   periods: [],
   accounts: [],
+  masterMeter: null,
   rateTable: null,
   currentPeriodId: null,
   lockStartReadings: false,
@@ -45,9 +46,10 @@ function accountsFor(period) {
 
 async function init() {
   await db.seedIfEmpty();
-  [state.periods, state.accounts, state.rateTable, state.lockStartReadings, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
+  [state.periods, state.accounts, state.masterMeter, state.rateTable, state.lockStartReadings, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
     db.getPeriods(),
     db.getAccounts(),
+    db.getConfig('masterMeter'),
     db.getConfig('rateTable'),
     db.getConfig('lockStartReadings').then(v => v ?? true),
     db.getConfig('smsTemplate').then(v => v ?? null),
@@ -112,7 +114,7 @@ function render() {
   if (!hasPeriods) return;
 
   ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-  ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updatePeriodNavButtons();
 }
 
@@ -136,7 +138,7 @@ function setupEvents() {
     state.currentPeriodId = state.periods[idx - 1].id;
     undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
     ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     updatePeriodNavButtons();
   });
 
@@ -146,7 +148,7 @@ function setupEvents() {
     state.currentPeriodId = state.periods[idx + 1].id;
     undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
     ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     updatePeriodNavButtons();
   });
 
@@ -169,7 +171,7 @@ function setupEvents() {
     undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
     document.getElementById('period-popover').hidden = true;
     ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     updatePeriodNavButtons();
   });
 
@@ -193,7 +195,7 @@ function setupEvents() {
       state.sortConfig = { column: col, dir: 'asc' };
     }
     if (state.currentPeriod) {
-      ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+      ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     }
   });
 
@@ -364,13 +366,18 @@ function setupEvents() {
 
   // Auto-sync: upload when foreground + local changes + 5min elapsed
   const autoSync = () => {
-    if (!state.githubConfig?.key || document.hidden || !state.localDirty) return;
+    if (!state.githubConfig?.key || document.hidden) return;
     const now = Date.now();
     if (now - lastAutoSyncTime < 5 * 60 * 1000) return;
     lastAutoSyncTime = now;
     githubSync(true);
   };
-  document.addEventListener('visibilitychange', autoSync);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.githubConfig?.key) {
+      lastAutoSyncTime = 0;
+      githubSync(true);
+    }
+  });
   setInterval(autoSync, 60 * 1000);
 }
 
@@ -384,19 +391,28 @@ function handleReadingInput(e) {
   if (!period) return;
   if (snapshotPending) { snapshotReadings(); snapshotPending = false; }
 
-  let reading = period.readings.find(r => r.accountId === accountId);
-  if (!reading) {
-    reading = { accountId, startReading: null, endReading: null, endReadingAt: null };
-    period.readings.push(reading);
-  }
   const field = e.target.dataset.field === 'start' ? 'startReading' : 'endReading';
-  reading[field] = val === '' ? null : Number(val);
-  if (field === 'endReading') {
-    reading.endReadingAt = Date.now();
-  }
 
-  ui.updateRow(accountId, period, accountsFor(period));
-  ui.updateTotals(period, accountsFor(period));
+  if (accountId === 0) {
+    if (!period.masterReading) period.masterReading = { startReading: null, endReading: null, endReadingAt: null };
+    period.masterReading[field] = val === '' ? null : Number(val);
+    if (field === 'endReading') {
+      period.masterReading.endReadingAt = Date.now();
+    }
+    ui.updateMasterRow(period, state.masterMeter);
+  } else {
+    let reading = period.readings.find(r => r.accountId === accountId);
+    if (!reading) {
+      reading = { accountId, startReading: null, endReading: null, endReadingAt: null };
+      period.readings.push(reading);
+    }
+    reading[field] = val === '' ? null : Number(val);
+    if (field === 'endReading') {
+      reading.endReadingAt = Date.now();
+    }
+    ui.updateRow(accountId, period, accountsFor(period));
+    ui.updateTotals(period, accountsFor(period));
+  }
 
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => flushSave(period), 600);
@@ -439,7 +455,7 @@ function undo() {
   period.readings = undoHistory.pop();
   snapshotPending = true;
   flushSave(period);
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updateUndoButtons();
 }
 
@@ -450,7 +466,7 @@ function redo() {
   period.readings = redoStack.pop();
   snapshotPending = true;
   flushSave(period);
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updateUndoButtons();
 }
 
@@ -504,7 +520,7 @@ async function handleNewPeriod() {
   const endStr     = dateStr(nextEnd);
 
   const [y, m, d] = endStr.split('-').map(Number);
-  const period = billing.newPeriod(latest, state.accounts, state.rateTable);
+  const period = billing.newPeriod(latest, state.accounts, state.masterMeter, state.rateTable);
   period.endDate          = endStr;
   period.name             = new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   period.accountsSnapshot = JSON.parse(JSON.stringify(state.accounts));
@@ -574,6 +590,7 @@ async function confirmPeriod() {
       rateTableSnapshot: JSON.parse(JSON.stringify(state.rateTable)),
       accountsSnapshot: JSON.parse(JSON.stringify(state.accounts)),
       readings: state.accounts.map(a => ({ accountId: a.id, startReading: null, endReading: null, endReadingAt: null })),
+      masterReading: { startReading: null, endReading: null, endReadingAt: null },
       normalizationFactor: null,
     };
   } else {
@@ -583,7 +600,7 @@ async function confirmPeriod() {
     const startStr = dateStr(startDate);
     if (endStr < startStr) { alert('End date must be after the previous period end.'); return; }
     const [y, m, d] = endStr.split('-').map(Number);
-    period = billing.newPeriod(latest, state.accounts, state.rateTable);
+    period = billing.newPeriod(latest, state.accounts, state.masterMeter, state.rateTable);
     period.endDate          = endStr;
     period.name             = new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     period.accountsSnapshot = JSON.parse(JSON.stringify(state.accounts));
@@ -613,7 +630,7 @@ async function handleNormalize() {
     await db.savePeriod(period);
     const idx = state.periods.findIndex(p => p.id === period.id);
     if (idx >= 0) state.periods[idx] = period;
-    ui.renderPeriod(period, state.accounts, state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    ui.renderPeriod(period, state.accounts, state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     return;
   }
 
@@ -659,7 +676,7 @@ async function confirmNormalize() {
   if (idx >= 0) state.periods[idx] = period;
   state.localDirty = true;
   document.getElementById('normalize-dialog').close();
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   syncToFile();
 }
 
@@ -670,7 +687,7 @@ function clearSmsSentStatus() {
   if (!period) return;
   period.readings.forEach(r => { delete r.smsSentAt; });
   flushSave(period);
-  ui.renderPeriod(period, accountsFor(period), state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
 }
 
 function repositionMenu(menu) {
@@ -714,19 +731,32 @@ function hideAmountMenu() {
 }
 
 function handleTextClick(accountId) {
-  const account = accountsFor(state.currentPeriod).find(a => a.id === accountId);
   const period  = state.currentPeriod;
-  if (!account?.phone || !period) return;
+  if (!period) return;
 
-  let reading = period.readings.find(r => r.accountId === accountId);
-  if (!reading) {
-    reading = { accountId, startReading: null, endReading: null, endReadingAt: null };
-    period.readings.push(reading);
+  let account, reading;
+
+  if (accountId === 0) {
+    account = state.masterMeter;
+    reading = period.masterReading;
+  } else {
+    account = accountsFor(period).find(a => a.id === accountId);
+    reading = period.readings.find(r => r.accountId === accountId);
+    if (!reading) {
+      reading = { accountId, startReading: null, endReading: null, endReadingAt: null };
+      period.readings.push(reading);
+    }
   }
+
+  if (!account?.phone) return;
 
   const body = encodeURIComponent(billing.buildSMSBody(account, reading, period, state.smsTemplate));
 
-  reading.smsSentAt = Date.now();
+  if (accountId === 0) {
+    period.masterReading.smsSentAt = Date.now();
+  } else {
+    reading.smsSentAt = Date.now();
+  }
   flushSave(period);
   const amtEl = document.getElementById(`amt-${accountId}`);
   if (amtEl) amtEl.classList.add('sms-sent');
@@ -748,7 +778,7 @@ function toggleTheme() {
 }
 
 function openSettings() {
-  ui.renderSettings(state.rateTable, state.accounts, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate, state.maxSheets, state.showMasterSection);
+  ui.renderSettings(state.rateTable, state.accounts, state.masterMeter, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate, state.maxSheets, state.showMasterSection);
   document.getElementById('settings-dialog').showModal();
 }
 
@@ -759,20 +789,20 @@ function closeSettings() {
 async function saveSettings() {
   const result = ui.collectSettings();
   if (!result) return;
-  const { rateTable, accounts, lockStartReadings, smsTemplate } = result;
+  const { rateTable, accounts, masterMeter, lockStartReadings, smsTemplate } = result;
 
-  // Master accounts are not shown in the editor — preserve them as-is
-  const masters = state.accounts.filter(a => a.isMaster);
   await Promise.all([
     db.setConfig('rateTable', rateTable),
     db.setConfig('lockStartReadings', lockStartReadings),
     db.setConfig('smsTemplate', smsTemplate),
-    db.replaceAllAccounts([...accounts, ...masters]),
+    db.setConfig('masterMeter', masterMeter),
+    db.replaceAllAccounts(accounts),
   ]);
   state.smsTemplate = smsTemplate;
   state.lockStartReadings = lockStartReadings;
   state.maxSheets = result.maxSheets;
   state.showMasterSection = result.showMasterSection;
+  state.masterMeter = masterMeter;
   await db.setConfig('maxSheets', result.maxSheets);
   await db.setConfig('showMasterSection', result.showMasterSection);
   state.localDirty = true;
@@ -786,7 +816,7 @@ async function saveSettings() {
   if (period) {
     const existing = new Set(period.readings.map(r => r.accountId));
     const added    = state.accounts.filter(a => !existing.has(a.id));
-    added.forEach(a => period.readings.push({ accountId: a.id, startReading: null, endReading: null }));
+    added.forEach(a => period.readings.push({ accountId: a.id, startReading: null, endReading: null, endReadingAt: null }));
     period.accountsSnapshot = JSON.parse(JSON.stringify(state.accounts));
     await db.savePeriod(period);
   }
@@ -827,13 +857,11 @@ function pickFile(accept) {
   });
 }
 
-function periodRows(period, accounts) {
+function periodRows(period, accounts, masterMeter) {
   const readMap = new Map((period.readings || []).map(r => [r.accountId, r]));
-  const nonMaster = accounts.filter(a => !a.isMaster);
-  const masters   = accounts.filter(a => a.isMaster);
   const rows = [];
 
-  for (const a of nonMaster) {
+  for (const a of accounts) {
     const r = readMap.get(a.id);
     const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
     const amt = g != null ? billing.calcBill(g, period.rateTableSnapshot) : null;
@@ -842,7 +870,7 @@ function periodRows(period, accounts) {
 
   // Totals
   let totalGal = 0, totalAmt = 0;
-  for (const a of nonMaster) {
+  for (const a of accounts) {
     const r = readMap.get(a.id);
     if (!r) continue;
     const g = billing.getGallons(r, period.normalizationFactor);
@@ -850,21 +878,21 @@ function periodRows(period, accounts) {
   }
   rows.push(['Total', '', '', '', totalGal, +totalAmt.toFixed(2)]);
 
-  // Master meter(s)
-  for (const a of masters) {
-    const r = readMap.get(a.id);
+  // Master meter
+  if (masterMeter) {
+    const r = period.masterReading;
     const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
     const amt = g != null ? billing.calcBill(g, period.rateTableSnapshot) : null;
-    rows.push([`Master Meter – ${a.name}`, a.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', g ?? '', amt ?? '']);
+    rows.push([`Master Meter – ${masterMeter.name}`, masterMeter.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', g ?? '', amt ?? '']);
   }
 
   return rows;
 }
 
-function buildPeriodSheet(period, accounts) {
+function buildPeriodSheet(period, accounts, masterMeter) {
   const XLSX = window.XLSX;
   const header = ['Account', 'Account Holder', 'Start Reading', 'End Reading', 'Gallons', 'Amount Due'];
-  const data = [header, ...periodRows(period, accounts)];
+  const data = [header, ...periodRows(period, accounts, masterMeter)];
   return XLSX.utils.aoa_to_sheet(data);
 }
 
@@ -873,7 +901,7 @@ function exportCurrentPeriodXLSX() {
   if (!period) return;
   const XLSX = window.XLSX;
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, buildPeriodSheet(period, accountsFor(period)), period.name.slice(0, 31));
+  XLSX.utils.book_append_sheet(wb, buildPeriodSheet(period, accountsFor(period), state.masterMeter), period.name.slice(0, 31));
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   downloadFile(buf, `water-bill-${period.name}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
@@ -1020,6 +1048,7 @@ function mergeReadings(basePeriods, otherPeriods) {
   const merged = basePeriods.map(basePeriod => {
     const otherPeriod = otherMap.get(basePeriod.name);
     if (!otherPeriod) return basePeriod;
+
     const otherReadingMap = new Map(otherPeriod.readings.map(r => [r.accountId, r]));
     const mergedReadings = basePeriod.readings.map(baseReading => {
       const otherReading = otherReadingMap.get(baseReading.accountId);
@@ -1029,17 +1058,25 @@ function mergeReadings(basePeriods, otherPeriods) {
       if (otherAt > baseAt) { hadNewer = true; return otherReading; }
       return baseReading;
     });
-    return { ...basePeriod, readings: mergedReadings };
+
+    let mergedMasterReading = basePeriod.masterReading ?? { startReading: null, endReading: null, endReadingAt: null };
+    if (otherPeriod.masterReading) {
+      const baseAt = (basePeriod.masterReading?.endReadingAt) ?? 0;
+      const otherAt = otherPeriod.masterReading.endReadingAt ?? 0;
+      if (otherAt > baseAt) { hadNewer = true; mergedMasterReading = otherPeriod.masterReading; }
+    }
+
+    return { ...basePeriod, readings: mergedReadings, masterReading: mergedMasterReading };
   });
   return { merged, hadNewer };
 }
 
 async function buildBackupData() {
-  const [accounts, periods, rateTable, lockStartReadings] = await Promise.all([
-    db.getAccounts(), db.getPeriods(), db.getConfig('rateTable'),
+  const [accounts, periods, masterMeter, rateTable, lockStartReadings] = await Promise.all([
+    db.getAccounts(), db.getPeriods(), db.getConfig('masterMeter'), db.getConfig('rateTable'),
     db.getConfig('lockStartReadings'),
   ]);
-  return { version: 1, exportedAt: new Date().toISOString(), rateTable, lockStartReadings, accounts, periods };
+  return { version: 1, exportedAt: new Date().toISOString(), masterMeter, rateTable, lockStartReadings, accounts, periods };
 }
 
 async function applyBackupData(data) {
@@ -1047,10 +1084,27 @@ async function applyBackupData(data) {
     throw new Error('Invalid backup file');
   const rateTable         = data.config?.rateTable ?? data.rateTable;
   const lockStartReadings = data.config?.lockStartReadings ?? data.lockStartReadings ?? false;
+  const masterMeter       = data.masterMeter;
+
   if (rateTable) await db.setConfig('rateTable', rateTable);
   await db.setConfig('lockStartReadings', lockStartReadings);
-  await db.replaceAllAccounts(data.accounts);
-  await db.replaceAllPeriods(data.periods);
+  if (masterMeter) await db.setConfig('masterMeter', masterMeter);
+
+  const accounts = data.accounts.filter(a => !a.isMaster);
+  const periods = data.periods.map(p => {
+    const masterAcctId = data.accounts.find(a => a.isMaster)?.id;
+    if (masterAcctId && !p.masterReading) {
+      const masterReading = p.readings?.find(r => r.accountId === masterAcctId);
+      if (masterReading) {
+        p.masterReading = { startReading: masterReading.startReading, endReading: masterReading.endReading, endReadingAt: null };
+        p.readings = p.readings.filter(r => r.accountId !== masterAcctId);
+      }
+    }
+    return p;
+  });
+
+  await db.replaceAllAccounts(accounts);
+  await db.replaceAllPeriods(periods);
 }
 
 async function syncToFile() {
