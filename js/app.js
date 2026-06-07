@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=4';
 import * as billing from './billing.js?v=4';
-import * as ui      from './ui.js?v=11';
+import * as ui      from './ui.js?v=12';
 
 // Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
 
@@ -42,9 +42,55 @@ function accountsFor(period) {
   return period?.accountsSnapshot ?? state.accounts;
 }
 
+function buildSyncUrl() {
+  const key = state.githubConfig?.key ?? '';
+  return `${location.origin}${location.pathname}#sync=${encodeURIComponent(key)}`;
+}
+
+function showQRDialog() {
+  const el = document.getElementById('qr-canvas');
+  el.innerHTML = '';
+  new QRCode(el, { text: buildSyncUrl(), width: 220, height: 220 });
+  document.getElementById('qr-dialog').showModal();
+}
+
+function offerPendingSyncKey() {
+  const key = pendingSyncKey;
+  pendingSyncKey = null;
+
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:var(--blue);color:white;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;z-index:999;box-shadow:0 2px 8px rgba(0,0,0,0.2)';
+  banner.innerHTML = `<span>Apply sync key from QR code?</span><div style="display:flex;gap:8px"><button id="btn-sync-yes" class="btn" style="font-size:12px;padding:4px 12px;background:white;color:var(--blue);border:none;border-radius:var(--radius);cursor:pointer;font-weight:bold">Yes</button><button id="btn-sync-no" class="btn" style="font-size:12px;padding:4px 12px;background:transparent;color:white;border:1px solid white;border-radius:var(--radius);cursor:pointer">No</button></div>`;
+  document.body.insertBefore(banner, document.body.firstChild);
+
+  const onYes = async () => {
+    banner.remove();
+    state.githubConfig = { key };
+    await db.setConfig('githubConfig', state.githubConfig);
+    document.getElementById('btn-sync').hidden = false;
+    render();
+    await githubSync();
+  };
+
+  const onNo = () => {
+    banner.remove();
+  };
+
+  document.getElementById('btn-sync-yes').addEventListener('click', onYes);
+  document.getElementById('btn-sync-no').addEventListener('click', onNo);
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+let pendingSyncKey = null;
+
 async function init() {
+  const hash = location.hash;
+  if (hash.startsWith('#sync=')) {
+    pendingSyncKey = decodeURIComponent(hash.slice(6));
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+
   await db.seedIfEmpty();
   [state.periods, state.accounts, state.masterMeter, state.rateTable, state.lockStartReadings, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
     db.getPeriods(),
@@ -86,6 +132,9 @@ async function init() {
   }
 
   render();
+  if (pendingSyncKey) {
+    offerPendingSyncKey();
+  }
   setupEvents();
   registerSW();
   document.getElementById('btn-theme').innerHTML = themeIconHTML(
@@ -250,6 +299,13 @@ function setupEvents() {
 
   // GitHub sync
   document.getElementById('btn-sync').addEventListener('click', () => githubSync());
+
+  // QR code dialog
+  document.getElementById('btn-show-qr').addEventListener('click', showQRDialog);
+  document.getElementById('close-qr-dialog').addEventListener('click', () =>
+    document.getElementById('qr-dialog').close());
+  document.getElementById('btn-copy-sync-link').addEventListener('click', () =>
+    navigator.clipboard.writeText(buildSyncUrl()));
 
   // Period creation dialog
   document.getElementById('close-period-dialog').addEventListener('click', closePeriodDialog);

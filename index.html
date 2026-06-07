@@ -227,7 +227,23 @@
     </div>
   </div>
 
+  <!-- QR Code dialog -->
+  <dialog id="qr-dialog" class="period-dialog">
+    <div class="dialog-header">
+      <h2>Sync Key QR Code</h2>
+      <button id="close-qr-dialog" class="btn btn-icon" aria-label="Close">×</button>
+    </div>
+    <div class="dialog-body" style="text-align:center">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Scan on another device to copy the sync key.</p>
+      <div id="qr-canvas" style="display:inline-block"></div>
+      <p style="margin-top:12px">
+        <button id="btn-copy-sync-link" class="btn btn-secondary" style="font-size:13px">Copy Link</button>
+      </p>
+    </div>
+  </dialog>
+
   <script src="js/vendor/xlsx.full.min.js"></script>
-  <script type="module" src="js/app.js?v=66"></script>
+  <script src="js/vendor/qrcode.min.js"></script>
+  <script type="module" src="js/app.js?v=67"></script>
 </body>
 </html>

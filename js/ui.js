@@ -257,6 +257,7 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null,
                  placeholder="passphrase"
                  style="width:100%;margin-top:4px">
         </label>
+        <button id="btn-show-qr" class="btn btn-secondary"${githubConfig?.key ? '' : ' hidden'} style="font-size:13px">QR Code</button>
       </div>
       <p class="data-desc" style="margin-top:8px;font-size:11px">
         Save these settings, then use the ↕ Sync button in the header.
