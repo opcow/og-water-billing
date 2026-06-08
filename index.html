@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=25">
+  <link rel="stylesheet" href="css/styles.css?v=27">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -28,11 +28,11 @@
             <button id="popover-next-year">›</button>
           </div>
           <div id="popover-month-grid" class="popover-month-grid"></div>
+          <button id="btn-new-period" class="btn btn-primary" style="width:100%;margin-top:10px">+ New Sheet</button>
         </div>
       </div>
-      <button id="btn-normalize" class="btn btn-secondary" hidden>Normalize</button>
+      <button id="btn-prorate" class="btn btn-secondary" hidden>Prorate</button>
       <button id="btn-print" class="btn btn-secondary" hidden>Print</button>
-      <button id="btn-new-period" class="btn btn-primary" hidden>+ New Sheet</button>
       <button id="btn-delete-period" class="btn btn-secondary btn-delete-period" hidden title="Delete this billing sheet">Delete Sheet</button>
       <button id="btn-sync" class="btn btn-secondary" hidden title="Sync with GitHub">Sync</button>
       <button id="btn-theme" class="btn btn-icon" aria-label="Toggle dark mode" title="Toggle dark mode"></button>
@@ -200,11 +200,11 @@
     </div>
   </dialog>
 
-  <!-- ── Normalize dialog ────────────────────────────────────────────────────── -->
-  <dialog id="normalize-dialog" class="period-dialog">
+  <!-- ── Prorate dialog ────────────────────────────────────────────────────── -->
+  <dialog id="prorate-dialog" class="period-dialog">
     <div class="dialog-header">
-      <h2>Normalize Readings</h2>
-      <button id="close-normalize-dialog" class="btn btn-icon" aria-label="Close">×</button>
+      <h2>Prorate Readings</h2>
+      <button id="close-prorate-dialog" class="btn btn-icon" aria-label="Close">×</button>
     </div>
     <div class="dialog-body">
       <p style="margin-bottom:14px;font-size:13px;color:var(--muted)">
@@ -213,14 +213,14 @@
       </p>
       <div class="form-row">
         <label>Day reading was taken
-          <input type="number" id="normalize-reading-day" min="1" max="31" style="width:80px">
+          <input type="number" id="prorate-reading-day" min="1" max="31" style="width:80px">
         </label>
       </div>
-      <p id="normalize-info" style="font-size:12px;color:var(--muted);margin-top:4px;min-height:1.4em"></p>
+      <p id="prorate-info" style="font-size:12px;color:var(--muted);margin-top:4px;min-height:1.4em"></p>
     </div>
     <div class="dialog-footer">
-      <button id="btn-cancel-normalize" class="btn btn-secondary">Cancel</button>
-      <button id="btn-confirm-normalize" class="btn btn-primary">Apply</button>
+      <button id="btn-cancel-prorate" class="btn btn-secondary">Cancel</button>
+      <button id="btn-confirm-prorate" class="btn btn-primary">Apply</button>
     </div>
   </dialog>
 
@@ -252,6 +252,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=71"></script>
+  <script type="module" src="js/app.js?v=74"></script>
 </body>
 </html>

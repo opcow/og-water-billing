@@ -98,8 +98,8 @@ function newMonth() {
   }
 }
 
-// normalizes the bill for a 30 day period in case of a late reading
-function normalizeBilling() {
+// prorates the bill for a 30 day period in case of a late reading
+function prorateBilling() {
   var app = SpreadsheetApp;
   var activeSheet = app.getActiveSpreadsheet().getActiveSheet();
 
@@ -284,7 +284,7 @@ function onEdit(e) {
   if (ref == "A18") {
     newMonth();
   } else {
-    normalizeBilling();
+    prorateBilling();
   }
 }
 

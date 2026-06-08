@@ -154,8 +154,7 @@ function render() {
   const hasPeriods = state.periods.length > 0;
   document.getElementById('empty-state').hidden  = hasPeriods;
   document.getElementById('period-view').hidden  = !hasPeriods;
-  document.getElementById('btn-new-period').hidden    = !hasPeriods;
-  document.getElementById('btn-normalize').hidden     = !hasPeriods;
+  document.getElementById('btn-prorate').hidden     = !hasPeriods;
   document.getElementById('btn-print').hidden         = !hasPeriods;
   document.getElementById('btn-delete-period').hidden = !hasPeriods;
   document.getElementById('btn-sync').hidden = !state.githubConfig?.key;
@@ -279,8 +278,8 @@ function setupEvents() {
   document.getElementById('btn-delete-period').addEventListener('click', handleDeletePeriod);
   document.getElementById('btn-first-period').addEventListener('click', () => openPeriodDialog(true));
 
-  // Normalize
-  document.getElementById('btn-normalize').addEventListener('click', handleNormalize);
+  // Prorate
+  document.getElementById('btn-prorate').addEventListener('click', handleProrate);
 
   // Print
   document.getElementById('btn-print').addEventListener('click', () => window.print());
@@ -293,13 +292,13 @@ function setupEvents() {
   document.getElementById('close-settings').addEventListener('click', closeSettings);
   document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
   document.getElementById('btn-cancel-settings').addEventListener('click', closeSettings);
-  // Normalize dialog
-  document.getElementById('close-normalize-dialog').addEventListener('click', () => document.getElementById('normalize-dialog').close());
-  document.getElementById('btn-cancel-normalize').addEventListener('click',  () => document.getElementById('normalize-dialog').close());
-  document.getElementById('btn-confirm-normalize').addEventListener('click', confirmNormalize);
-  document.getElementById('normalize-reading-day').addEventListener('input', updateNormalizeInfo);
-  document.getElementById('normalize-dialog').addEventListener('click', e => {
-    if (e.target === e.currentTarget) document.getElementById('normalize-dialog').close();
+  // Prorate dialog
+  document.getElementById('close-prorate-dialog').addEventListener('click', () => document.getElementById('prorate-dialog').close());
+  document.getElementById('btn-cancel-prorate').addEventListener('click',  () => document.getElementById('prorate-dialog').close());
+  document.getElementById('btn-confirm-prorate').addEventListener('click', confirmProrate);
+  document.getElementById('prorate-reading-day').addEventListener('input', updateProrateInfo);
+  document.getElementById('prorate-dialog').addEventListener('click', e => {
+    if (e.target === e.currentTarget) document.getElementById('prorate-dialog').close();
   });
 
   document.getElementById('btn-add-tier').addEventListener('click', ui.addRateTierRow);
@@ -706,9 +705,9 @@ async function confirmPeriod() {
   syncToFile();
 }
 
-// ── Normalize ─────────────────────────────────────────────────────────────────
+// ── Prorate ─────────────────────────────────────────────────────────────────
 
-async function handleNormalize() {
+async function handleProrate() {
   const period = state.currentPeriod;
   if (!period) return;
 
@@ -724,16 +723,16 @@ async function handleNormalize() {
   }
 
   const billingDay = state.rateTable[0][4] ?? 3;
-  document.getElementById('normalize-reading-day').value = period.readingDay ?? billingDay;
-  updateNormalizeInfo();
-  document.getElementById('normalize-dialog').showModal();
+  document.getElementById('prorate-reading-day').value = period.readingDay ?? billingDay;
+  updateProrateInfo();
+  document.getElementById('prorate-dialog').showModal();
 }
 
-function updateNormalizeInfo() {
+function updateProrateInfo() {
   const period = state.currentPeriod;
   if (!period) return;
-  const readingDay = parseInt(document.getElementById('normalize-reading-day').value);
-  const infoEl = document.getElementById('normalize-info');
+  const readingDay = parseInt(document.getElementById('prorate-reading-day').value);
+  const infoEl = document.getElementById('prorate-info');
   if (!readingDay || readingDay < 1 || readingDay > 31) { infoEl.textContent = ''; return; }
 
   const billingDay = state.rateTable[0][4] ?? 3;
@@ -751,20 +750,20 @@ function updateNormalizeInfo() {
     : 'Reading day must be after the period start date.';
 }
 
-async function confirmNormalize() {
+async function confirmProrate() {
   const period = state.currentPeriod;
   if (!period) return;
-  const readingDay = parseInt(document.getElementById('normalize-reading-day').value);
+  const readingDay = parseInt(document.getElementById('prorate-reading-day').value);
   if (!readingDay || readingDay < 1 || readingDay > 31) {
     alert('Please enter a valid day (1–31).'); return;
   }
   const billingDay = state.rateTable[0][4] ?? 3;
-  Object.assign(period, billing.normalizePeriod(period, readingDay, billingDay));
+  Object.assign(period, billing.proratePeriod(period, readingDay, billingDay));
   await db.savePeriod(period);
   const idx = state.periods.findIndex(p => p.id === period.id);
   if (idx >= 0) state.periods[idx] = period;
   state.localDirty = true;
-  document.getElementById('normalize-dialog').close();
+  document.getElementById('prorate-dialog').close();
   ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   syncToFile();
 }

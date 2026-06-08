@@ -241,7 +241,7 @@ body {
 }
 .btn-undo-redo:disabled { opacity: 0.45; cursor: default; filter: none; }
 
-.period-dates .normalized-badge {
+.period-dates .prorated-badge {
   display: inline-block;
   margin-left: 8px;
   background: #FFF3CD;
@@ -652,8 +652,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
   .app-header h1 { font-size: 15px; }
 
   /* Hide management buttons — desktop tasks */
-  #btn-new-period,
-  #btn-normalize,
+  #btn-prorate,
   #btn-print,
   #btn-delete-period { display: none !important; }
 

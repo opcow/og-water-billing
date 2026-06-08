@@ -59,7 +59,7 @@ export function renderPeriod(period, accounts, masterMeter, sortConfig = { colum
   }
 
   const normBadge = period.normalizationFactor && period.normalizationFactor !== 1
-    ? `<span class="normalized-badge">Normalized</span>`
+    ? `<span class="prorated-badge">Prorated</span>`
     : '';
   datesEl.innerHTML = `${formatDate(period.startDate)} – ${formatDate(period.endDate)}${normBadge}`;
 

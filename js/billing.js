@@ -59,7 +59,7 @@ export function newPeriod(prevPeriod, accounts, masterMeter, rateTable) {
   };
 }
 
-export function normalizePeriod(period, readingDay, billingDay) {
+export function proratePeriod(period, readingDay, billingDay) {
   const [ey, em] = period.endDate.split('-').map(Number);
   const readingDate   = new Date(ey, em - 1, readingDay);
   const start         = parseLocalDate(period.startDate);
