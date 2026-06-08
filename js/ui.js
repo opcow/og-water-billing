@@ -123,6 +123,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
   const amtData  = ` data-account-id="${account.id}"`;
 
   const defClass = account.meterDefective ? ' col-defective' : '';
+  const disabledAttr = account.meterDefective ? ' disabled' : '';
 
   const startCell = lockStartReadings
     ? `<td class="num col-start${defClass}">${startV !== '' ? startV : '—'}</td>`
@@ -132,7 +133,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
           data-field="start"
           value="${startV !== '' ? startV : ''}"
           placeholder="—"
-          min="0">
+          min="0"${disabledAttr}>
       </td>`;
 
   return `
@@ -145,7 +146,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
           data-field="end"
           value="${endV !== '' ? endV : ''}"
           placeholder="—"
-          min="0">
+          min="0"${disabledAttr}>
       </td>
       <td class="num col-gal" id="gal-${account.id}">${g != null ? formatNumber(g) : '—'}</td>
       <td class="${amtClass}" id="amt-${account.id}"${amtData}>${amount != null ? formatCurrency(amount) : '—'}</td>
@@ -440,7 +441,7 @@ function renderAccountsEditor(accounts, masterMeter) {
       <span>Unit / Name</span><span>Account Holder</span><span></span>
     </div>
     ${accounts.map(a => accountRowHTML(a)).join('')}
-    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+    <div style="margin-top:20px;padding-top:20px">
       <div class="acc-header">
         <span></span>
         <span style="font-weight:bold">Master Meter</span><span></span><span></span>

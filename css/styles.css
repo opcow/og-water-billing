@@ -502,9 +502,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 
 .account-row {
   padding: 10px 0;
-  border-bottom: 1px solid var(--border);
 }
-.account-row:last-child { border-bottom: none; }
 
 .acc-primary {
   display: grid;

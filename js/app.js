@@ -60,7 +60,7 @@ function offerPendingSyncKey() {
 
   const banner = document.createElement('div');
   banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:var(--blue);color:white;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;z-index:999;box-shadow:0 2px 8px rgba(0,0,0,0.2)';
-  banner.innerHTML = `<span>Apply sync key from QR code?</span><div style="display:flex;gap:8px"><button id="btn-sync-yes" class="btn" style="font-size:12px;padding:4px 12px;background:white;color:var(--blue);border:none;border-radius:var(--radius);cursor:pointer;font-weight:bold">Yes</button><button id="btn-sync-no" class="btn" style="font-size:12px;padding:4px 12px;background:transparent;color:white;border:1px solid white;border-radius:var(--radius);cursor:pointer">No</button></div>`;
+  banner.innerHTML = `<span>Apply sync key?</span><div style="display:flex;gap:8px"><button id="btn-sync-yes" class="btn" style="font-size:12px;padding:4px 12px;background:white;color:var(--blue);border:none;border-radius:var(--radius);cursor:pointer;font-weight:bold">Yes</button><button id="btn-sync-no" class="btn" style="font-size:12px;padding:4px 12px;background:transparent;color:white;border:1px solid white;border-radius:var(--radius);cursor:pointer">No</button></div>`;
   document.body.insertBefore(banner, document.body.firstChild);
 
   const onYes = async () => {
@@ -168,6 +168,15 @@ function render() {
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
+
+function showSyncLinkFallback(syncUrl) {
+  const input = document.getElementById('qr-link-input');
+  input.value = syncUrl;
+  input.style.display = 'block';
+  input.select();
+  input.focus();
+  document.execCommand('copy');
+}
 
 function setupEvents() {
   // Period picker popover
@@ -304,7 +313,14 @@ function setupEvents() {
   document.addEventListener('click', e => {
     if (e.target.id === 'btn-show-qr') showQRDialog();
     if (e.target.id === 'close-qr-dialog') document.getElementById('qr-dialog').close();
-    if (e.target.id === 'btn-copy-sync-link') navigator.clipboard.writeText(buildSyncUrl());
+    if (e.target.id === 'btn-copy-sync-link') {
+      const syncUrl = buildSyncUrl();
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(syncUrl).catch(() => showSyncLinkFallback(syncUrl));
+      } else {
+        showSyncLinkFallback(syncUrl);
+      }
+    }
   });
 
   // Period creation dialog
