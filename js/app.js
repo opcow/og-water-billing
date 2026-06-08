@@ -92,16 +92,16 @@ async function init() {
   }
 
   await db.seedIfEmpty();
-  [state.periods, state.accounts, state.masterMeter, state.rateTable, state.lockStartReadings, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
+  [state.periods, state.accounts, state.masterMeter, state.rateTable, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
     db.getPeriods(),
     db.getAccounts(),
     db.getConfig('masterMeter'),
     db.getConfig('rateTable'),
-    db.getConfig('lockStartReadings').then(v => v ?? true),
     db.getConfig('smsTemplate').then(v => v ?? null),
     db.getConfig('maxSheets').then(v => v ?? 12),
     db.getConfig('showMasterSection').then(v => v ?? true),
   ]);
+  state.lockStartReadings = true;
   if (state.periods.length > 0) {
     state.currentPeriodId = state.periods[state.periods.length - 1].id;
   }
@@ -148,6 +148,13 @@ function updatePeriodNavButtons() {
   const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
   document.getElementById('btn-period-prev').disabled = idx <= 0;
   document.getElementById('btn-period-next').disabled = idx < 0 || idx >= state.periods.length - 1;
+}
+
+function updateLockReadingsButton() {
+  const btn = document.getElementById('btn-toggle-lock-readings');
+  if (btn) {
+    btn.textContent = state.lockStartReadings ? 'Unlock Start Readings' : 'Lock Start Readings';
+  }
 }
 
 function render() {
@@ -292,6 +299,15 @@ function setupEvents() {
   document.getElementById('close-settings').addEventListener('click', closeSettings);
   document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
   document.getElementById('btn-cancel-settings').addEventListener('click', closeSettings);
+
+  // Toggle lock readings
+  document.getElementById('btn-toggle-lock-readings').addEventListener('click', () => {
+    state.lockStartReadings = !state.lockStartReadings;
+    updateLockReadingsButton();
+    if (state.currentPeriod) {
+      ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    }
+  });
   // Prorate dialog
   document.getElementById('close-prorate-dialog').addEventListener('click', () => document.getElementById('prorate-dialog').close());
   document.getElementById('btn-cancel-prorate').addEventListener('click',  () => document.getElementById('prorate-dialog').close());
@@ -866,7 +882,8 @@ function toggleTheme() {
 }
 
 function openSettings() {
-  ui.renderSettings(state.rateTable, state.accounts, state.masterMeter, !!state.currentPeriod, state.lockStartReadings, state.dataFileHandle, state.githubConfig, state.smsTemplate, state.maxSheets, state.showMasterSection);
+  ui.renderSettings(state.rateTable, state.accounts, state.masterMeter, !!state.currentPeriod, state.dataFileHandle, state.githubConfig, state.smsTemplate, state.maxSheets, state.showMasterSection);
+  updateLockReadingsButton();
   document.getElementById('settings-dialog').showModal();
 }
 
@@ -877,17 +894,15 @@ function closeSettings() {
 async function saveSettings() {
   const result = ui.collectSettings();
   if (!result) return;
-  const { rateTable, accounts, masterMeter, lockStartReadings, smsTemplate } = result;
+  const { rateTable, accounts, masterMeter, smsTemplate } = result;
 
   await Promise.all([
     db.setConfig('rateTable', rateTable),
-    db.setConfig('lockStartReadings', lockStartReadings),
     db.setConfig('smsTemplate', smsTemplate),
     db.setConfig('masterMeter', masterMeter),
     db.replaceAllAccounts(accounts),
   ]);
   state.smsTemplate = smsTemplate;
-  state.lockStartReadings = lockStartReadings;
   state.maxSheets = result.maxSheets;
   state.showMasterSection = result.showMasterSection;
   state.masterMeter = masterMeter;
@@ -1050,10 +1065,10 @@ function showPeriodImportUI(backup) {
       if (!confirm(`Restore backup from ${exportedDate}?\n\nThis will replace ALL current accounts, periods, and rates.`)) return;
       await applyBackupData(backup);
       closeSettings();
-      [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
+      [state.periods, state.accounts, state.rateTable] = await Promise.all([
         db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
-        db.getConfig('lockStartReadings').then(v => v ?? true),
       ]);
+      state.lockStartReadings = true;
       state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
       state.sortConfig = { column: null, dir: 'asc' };
       render();
@@ -1113,10 +1128,10 @@ async function restoreFromFile(file) {
   if (!confirm(`Restore backup from ${data.exportedAt ? new Date(data.exportedAt).toLocaleString() : 'unknown date'}?\n\nThis will replace ALL current accounts, periods, and rates.`)) return;
   await applyBackupData(data);
   closeSettings();
-  [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
+  [state.periods, state.accounts, state.rateTable] = await Promise.all([
     db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
-    db.getConfig('lockStartReadings').then(v => v ?? true),
   ]);
+  state.lockStartReadings = true;
   state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
   state.sortConfig = { column: null, dir: 'asc' };
   render();
@@ -1160,22 +1175,19 @@ function mergeReadings(basePeriods, otherPeriods) {
 }
 
 async function buildBackupData() {
-  const [accounts, periods, masterMeter, rateTable, lockStartReadings] = await Promise.all([
+  const [accounts, periods, masterMeter, rateTable] = await Promise.all([
     db.getAccounts(), db.getPeriods(), db.getConfig('masterMeter'), db.getConfig('rateTable'),
-    db.getConfig('lockStartReadings'),
   ]);
-  return { version: 1, exportedAt: new Date().toISOString(), masterMeter, rateTable, lockStartReadings, accounts, periods };
+  return { version: 1, exportedAt: new Date().toISOString(), masterMeter, rateTable, accounts, periods };
 }
 
 async function applyBackupData(data) {
   if (!data.version || !Array.isArray(data.accounts) || !Array.isArray(data.periods))
     throw new Error('Invalid backup file');
   const rateTable         = data.config?.rateTable ?? data.rateTable;
-  const lockStartReadings = data.config?.lockStartReadings ?? data.lockStartReadings ?? false;
   const masterMeter       = data.masterMeter;
 
   if (rateTable) await db.setConfig('rateTable', rateTable);
-  await db.setConfig('lockStartReadings', lockStartReadings);
   if (masterMeter) await db.setConfig('masterMeter', masterMeter);
 
   const accounts = data.accounts.filter(a => !a.isMaster);
@@ -1271,10 +1283,10 @@ async function githubSync(isAuto = false) {
         const { merged, hadNewer } = mergeReadings(remoteData.periods, state.periods);
         remoteData.periods = merged;
         await applyBackupData(remoteData);
-        [state.periods, state.accounts, state.rateTable, state.lockStartReadings] = await Promise.all([
+        [state.periods, state.accounts, state.rateTable] = await Promise.all([
           db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
-          db.getConfig('lockStartReadings').then(v => v ?? true),
         ]);
+        state.lockStartReadings = true;
         state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
         state.sortConfig = { column: null, dir: 'asc' };
         state.localDirty = false;
@@ -1378,10 +1390,10 @@ async function chooseDataFile() {
     const file = await handle.getFile();
     if (file.size > 0 && confirm(`"${handle.name}" already has data. Restore from it?`)) {
       await applyBackupData(JSON.parse(await file.text()));
-      [state.accounts, state.periods, state.rateTable, state.lockStartReadings] = await Promise.all([
+      [state.accounts, state.periods, state.rateTable] = await Promise.all([
         db.getAccounts(), db.getPeriods(), db.getConfig('rateTable'),
-        db.getConfig('lockStartReadings').then(v => v ?? true),
       ]);
+      state.lockStartReadings = true;
       state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
       state.sortConfig = { column: null, dir: 'asc' };
     }

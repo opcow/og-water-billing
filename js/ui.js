@@ -211,14 +211,13 @@ function renderTotals(period, nonMaster, readMap) {
 
 // ── Settings modal ────────────────────────────────────────────────────────────
 
-export function renderSettings(rateTable, accounts, masterMeter, hasPeriod, lockStartReadings, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 12, showMasterSection = true) {
+export function renderSettings(rateTable, accounts, masterMeter, hasPeriod, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 12, showMasterSection = true) {
   const baseCharge  = rateTable[0][3] ?? 0;
   const billingDay  = rateTable[0][4] ?? 3;
   const dueDay      = rateTable[0][5] ?? 20;
   document.getElementById('base-charge').value  = baseCharge;
   document.getElementById('billing-day').value  = billingDay;
   document.getElementById('due-day').value       = dueDay;
-  document.getElementById('lock-start-readings').checked = !!lockStartReadings;
   document.getElementById('show-master-section').checked = !!showMasterSection;
 
   renderRateTiers(rateTable);
@@ -595,9 +594,8 @@ export function collectSettings() {
     return acc;
   }).filter(a => a && a.name);
 
-  const lockStartReadings  = document.getElementById('lock-start-readings')?.checked ?? false;
   const showMasterSection  = document.getElementById('show-master-section')?.checked ?? true;
   const smsTemplate = document.getElementById('sms-template')?.value.trim() || null;
   const maxSheets = Math.min(120, Math.max(3, parseInt(document.getElementById('max-sheets')?.value, 10) || 60));
-  return { rateTable, accounts, masterMeter, lockStartReadings, showMasterSection, smsTemplate, maxSheets };
+  return { rateTable, accounts, masterMeter, showMasterSection, smsTemplate, maxSheets };
 }
