@@ -95,6 +95,8 @@ body {
   padding: 10px;
   z-index: 200;
   min-width: 180px;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .popover-year-nav {

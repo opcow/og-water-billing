@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=23">
+  <link rel="stylesheet" href="css/styles.css?v=25">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -30,9 +30,9 @@
           <div id="popover-month-grid" class="popover-month-grid"></div>
         </div>
       </div>
-      <button id="btn-new-period" class="btn btn-primary" hidden>+ New Sheet</button>
       <button id="btn-normalize" class="btn btn-secondary" hidden>Normalize</button>
       <button id="btn-print" class="btn btn-secondary" hidden>Print</button>
+      <button id="btn-new-period" class="btn btn-primary" hidden>+ New Sheet</button>
       <button id="btn-delete-period" class="btn btn-secondary btn-delete-period" hidden title="Delete this billing sheet">Delete Sheet</button>
       <button id="btn-sync" class="btn btn-secondary" hidden title="Sync with GitHub">Sync</button>
       <button id="btn-theme" class="btn btn-icon" aria-label="Toggle dark mode" title="Toggle dark mode"></button>
@@ -252,6 +252,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=70"></script>
+  <script type="module" src="js/app.js?v=71"></script>
 </body>
 </html>

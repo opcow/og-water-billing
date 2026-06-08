@@ -178,6 +178,26 @@ function showSyncLinkFallback(syncUrl) {
   document.execCommand('copy');
 }
 
+function goToPrevPeriod() {
+  const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+  if (idx <= 0) return;
+  state.currentPeriodId = state.periods[idx - 1].id;
+  undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
+  ui.renderPeriodPicker(state.periods, state.currentPeriodId);
+  ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  updatePeriodNavButtons();
+}
+
+function goToNextPeriod() {
+  const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+  if (idx < 0 || idx >= state.periods.length - 1) return;
+  state.currentPeriodId = state.periods[idx + 1].id;
+  undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
+  ui.renderPeriodPicker(state.periods, state.currentPeriodId);
+  ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
+  updatePeriodNavButtons();
+}
+
 function setupEvents() {
   // Period picker popover
   document.getElementById('btn-period-picker').addEventListener('click', e => {
@@ -190,25 +210,8 @@ function setupEvents() {
     popover.hidden = false;
   });
 
-  document.getElementById('btn-period-prev').addEventListener('click', () => {
-    const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-    if (idx <= 0) return;
-    state.currentPeriodId = state.periods[idx - 1].id;
-    undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
-    ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
-    updatePeriodNavButtons();
-  });
-
-  document.getElementById('btn-period-next').addEventListener('click', () => {
-    const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-    if (idx < 0 || idx >= state.periods.length - 1) return;
-    state.currentPeriodId = state.periods[idx + 1].id;
-    undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
-    ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
-    updatePeriodNavButtons();
-  });
+  document.getElementById('btn-period-prev').addEventListener('click', goToPrevPeriod);
+  document.getElementById('btn-period-next').addEventListener('click', goToNextPeriod);
 
   document.getElementById('popover-prev-year').addEventListener('click', e => {
     e.stopPropagation();
@@ -235,6 +238,20 @@ function setupEvents() {
 
   document.addEventListener('click', () => {
     document.getElementById('period-popover').hidden = true;
+  });
+
+  // Swipe to navigate periods
+  let swipeStartX = 0;
+  document.getElementById('period-view').addEventListener('touchstart', e => {
+    swipeStartX = e.touches[0].clientX;
+  });
+  document.getElementById('period-view').addEventListener('touchend', e => {
+    const swipeEndX = e.changedTouches[0].clientX;
+    const diff = swipeStartX - swipeEndX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0) goToNextPeriod();
+      else goToPrevPeriod();
+    }
   });
 
   // Column sort — only on the main billing table, not the master meter table
