@@ -5,3 +5,4 @@ shot*.png
 *.xlsm
 *.xlsb
 water-billing.json
+.wrangler/

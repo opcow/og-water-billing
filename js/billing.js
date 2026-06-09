@@ -22,24 +22,18 @@ export function getGallons(reading, normFactor) {
   return Math.floor(raw * normFactor / 10) * 10;
 }
 
+// Returns a period without name/endDate — callers compute and assign those.
 export function newPeriod(prevPeriod, accounts, masterMeter, rateTable) {
-  const billingDay = rateTable[0][4] ?? 3;
   const prevEnd = parseLocalDate(prevPeriod.endDate);
 
   const startDate = new Date(prevEnd);
   startDate.setDate(startDate.getDate() + 1);
 
-  const endDate = new Date(prevEnd);
-  endDate.setMonth(endDate.getMonth() + 1);
-  endDate.setDate(billingDay);
-
   const prevMap = new Map((prevPeriod.readings || []).map(r => [r.accountId, r.endReading]));
   const prevMasterEnd = prevPeriod.masterReading?.endReading ?? null;
 
   return {
-    name: monthLabel(endDate),
     startDate: toDateStr(startDate),
-    endDate: toDateStr(endDate),
     rateTableSnapshot: JSON.parse(JSON.stringify(rateTable)),
     readings: accounts.map(a => {
       const start = prevMap.get(a.id) ?? null;
@@ -79,7 +73,9 @@ const DEFAULT_SMS_TEMPLATE = 'Water Bill — {period}\n{holder}: {gallons}\nTota
 
 export function buildSMSBody(account, reading, period, template) {
   const g = getGallons(reading, period.normalizationFactor);
-  const amount = calcBill(g ?? 0, period.rateTableSnapshot);
+  const amount = account.fixedCharge != null
+    ? account.fixedCharge
+    : calcBill(g ?? 0, period.rateTableSnapshot);
   const galStr = g != null ? g.toLocaleString() + ' gal' : 'no reading';
   const dueDay = period.rateTableSnapshot[0][5] ?? 20;
   const [ey, em] = period.endDate.split('-').map(Number);
@@ -115,7 +111,7 @@ export function formatNumber(n) {
   return Number(n).toLocaleString('en-US');
 }
 
-function toDateStr(date) {
+export function toDateStr(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
@@ -127,6 +123,6 @@ function parseLocalDate(str) {
   return new Date(y, m - 1, d);
 }
 
-function monthLabel(date) {
+export function monthLabel(date) {
   return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }

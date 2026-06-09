@@ -1,8 +1,8 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=5';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=6';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function esc(str) {
+export function esc(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -113,8 +113,16 @@ function updateSortIndicators({ column, dir }) {
   });
 }
 
+function isBadReading(reading) {
+  return reading?.startReading != null && reading?.endReading != null
+    && reading.endReading < reading.startReading;
+}
+
+const BAD_READING_TITLE = 'End reading is less than start reading';
+
 function rowHTML(account, reading, period, lockStartReadings) {
   const g      = reading ? getGallons(reading, period.normalizationFactor) : null;
+  const bad    = isBadReading(reading);
   const amount = account.fixedCharge != null ? account.fixedCharge
                : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
   const startV = reading?.startReading ?? '';
@@ -148,7 +156,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
           placeholder="—"
           min="0"${disabledAttr}>
       </td>
-      <td class="num col-gal" id="gal-${account.id}">${g != null ? formatNumber(g) : '—'}</td>
+      <td class="num col-gal${bad ? ' usage-warning' : ''}" id="gal-${account.id}"${bad ? ` title="${BAD_READING_TITLE}"` : ''}>${g != null ? formatNumber(g) : '—'}</td>
       <td class="${amtClass}" id="amt-${account.id}"${amtData}>${amount != null ? formatCurrency(amount) : '—'}</td>
     </tr>`;
 }
@@ -162,7 +170,12 @@ export function updateRow(accountId, period, accounts) {
                : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
   const galEl  = document.getElementById(`gal-${accountId}`);
   const amtEl  = document.getElementById(`amt-${accountId}`);
-  if (galEl) galEl.textContent = g != null ? formatNumber(g) : '—';
+  if (galEl) {
+    galEl.textContent = g != null ? formatNumber(g) : '—';
+    const bad = isBadReading(reading);
+    galEl.classList.toggle('usage-warning', bad);
+    galEl.title = bad ? BAD_READING_TITLE : '';
+  }
   if (amtEl) {
     amtEl.textContent = amount != null ? formatCurrency(amount) : '—';
     amtEl.classList.toggle('sms-sent', !!reading.smsSentAt);
@@ -177,7 +190,12 @@ export function updateMasterRow(period, masterMeter) {
                : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
   const galEl  = document.getElementById('gal-0');
   const amtEl  = document.getElementById('amt-0');
-  if (galEl) galEl.textContent = g != null ? formatNumber(g) : '—';
+  if (galEl) {
+    galEl.textContent = g != null ? formatNumber(g) : '—';
+    const bad = isBadReading(reading);
+    galEl.classList.toggle('usage-warning', bad);
+    galEl.title = bad ? BAD_READING_TITLE : '';
+  }
   if (amtEl) {
     amtEl.textContent = amount != null ? formatCurrency(amount) : '—';
     amtEl.classList.toggle('sms-sent', !!reading.smsSentAt);
@@ -600,6 +618,6 @@ export function collectSettings() {
 
   const showMasterSection  = document.getElementById('show-master-section')?.checked ?? true;
   const smsTemplate = document.getElementById('sms-template')?.value.trim() || null;
-  const maxSheets = Math.min(120, Math.max(3, parseInt(document.getElementById('max-sheets')?.value, 10) || 60));
+  const maxSheets = Math.min(120, Math.max(3, parseInt(document.getElementById('max-sheets')?.value, 10) || 12));
   return { rateTable, accounts, masterMeter, showMasterSection, smsTemplate, maxSheets };
 }

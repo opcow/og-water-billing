@@ -25,6 +25,23 @@ function openDB() {
   });
 }
 
+export function closeDB() {
+  if (_db) { _db.close(); _db = null; }
+}
+
+// Closes our connection first so the delete isn't blocked by it; a delete
+// blocked only by other tabs is resolved optimistically (it completes once
+// those tabs close).
+export function deleteDB() {
+  closeDB();
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onblocked = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
 // Wraps a single IDB operation in a transaction. fn(store, txn) must return a
 // request, or null to signal completion via txn.oncomplete.
 function idb(storeName, mode, fn) {

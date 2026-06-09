@@ -1,8 +1,6 @@
-import * as db      from './db.js?v=5';
-import * as billing from './billing.js?v=5';
-import * as ui      from './ui.js?v=16';
-
-// Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
+import * as db      from './db.js?v=6';
+import * as billing from './billing.js?v=6';
+import * as ui      from './ui.js?v=17';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -43,6 +41,28 @@ let snapshotPending = false;
 // periods created before snapshots existed, the current live list.
 function accountsFor(period) {
   return period?.accountsSnapshot ?? state.accounts;
+}
+
+// Returns the account behind a long-press menu: id 0 is the master meter.
+function menuAccount(accountId) {
+  return accountId === 0 ? state.masterMeter : state.accounts.find(a => a.id === accountId);
+}
+
+// Persisted so unsynced edits survive a tab close (a 304 from the remote
+// would otherwise never trigger a push).
+function setLocalDirty(dirty) {
+  state.localDirty = dirty;
+  return db.setConfig('localDirty', dirty);
+}
+
+// Re-reads everything that applyBackupData may have replaced.
+async function reloadStateFromDB() {
+  [state.periods, state.accounts, state.rateTable, state.masterMeter] = await Promise.all([
+    db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'), db.getConfig('masterMeter'),
+  ]);
+  state.lockStartReadings = true;
+  state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
+  state.sortConfig = { column: null, dir: 'asc' };
 }
 
 function buildSyncUrl() {
@@ -107,7 +127,7 @@ function offerPendingSyncKey(key) {
 
 async function init() {
   await db.seedIfEmpty();
-  [state.periods, state.accounts, state.masterMeter, state.rateTable, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
+  [state.periods, state.accounts, state.masterMeter, state.rateTable, state.smsTemplate, state.maxSheets, state.showMasterSection, state.localDirty] = await Promise.all([
     db.getPeriods(),
     db.getAccounts(),
     db.getConfig('masterMeter'),
@@ -115,6 +135,7 @@ async function init() {
     db.getConfig('smsTemplate').then(v => v ?? null),
     db.getConfig('maxSheets').then(v => v ?? 12),
     db.getConfig('showMasterSection').then(v => v ?? true),
+    db.getConfig('localDirty').then(v => v ?? false),
   ]);
   state.lockStartReadings = true;
   if (state.periods.length > 0) {
@@ -124,18 +145,17 @@ async function init() {
   // Reconnect to the linked data file and auto-restore if IDB was cleared
   const fileHandle = await db.getConfig('dataFileHandle');
   if (fileHandle) {
+    state.dataFileHandle = fileHandle;
     try {
       const perm = await fileHandle.queryPermission({ mode: 'readwrite' });
-      if (perm === 'prompt') await fileHandle.requestPermission({ mode: 'readwrite' });
-      state.dataFileHandle = fileHandle;
+      // requestPermission throws without a user gesture; the handle stays
+      // linked and writes resume once the user grants access later.
+      if (perm === 'prompt') await fileHandle.requestPermission({ mode: 'readwrite' }).catch(() => {});
       if (state.periods.length === 0) {
         const file = await fileHandle.getFile();
         if (file.size > 0) {
           await applyBackupData(JSON.parse(await file.text()));
-          state.accounts = await db.getAccounts();
-          state.periods  = await db.getPeriods();
-          if (state.periods.length > 0)
-            state.currentPeriodId = state.periods[state.periods.length - 1].id;
+          await reloadStateFromDB();
         }
       }
     } catch (e) { console.warn('Data file reconnect failed:', e); }
@@ -260,16 +280,18 @@ function setupEvents() {
     document.getElementById('period-popover').hidden = true;
   });
 
-  // Swipe to navigate periods
-  let swipeStartX = 0;
+  // Swipe to navigate periods — require a mostly-horizontal gesture so
+  // scrolling the table doesn't switch sheets
+  let swipeStartX = 0, swipeStartY = 0;
   document.getElementById('period-view').addEventListener('touchstart', e => {
     swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
   });
   document.getElementById('period-view').addEventListener('touchend', e => {
-    const swipeEndX = e.changedTouches[0].clientX;
-    const diff = swipeStartX - swipeEndX;
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) goToNextPeriod();
+    const dx = swipeStartX - e.changedTouches[0].clientX;
+    const dy = swipeStartY - e.changedTouches[0].clientY;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > 2 * Math.abs(dy)) {
+      if (dx > 0) goToNextPeriod();
       else goToPrevPeriod();
     }
   });
@@ -397,10 +419,16 @@ function setupEvents() {
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
 
-  // Undo / Redo keyboard shortcuts
+  // Undo / Redo keyboard shortcuts (e.key is 'Z' when Shift is held, so
+  // compare lowercased). Leave native text-undo alone in non-reading fields.
   document.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const key = e.key.toLowerCase();
+    if (key !== 'z' && key !== 'y') return;
+    if (e.target.matches('input, textarea') && !e.target.matches('.reading-input')) return;
+    e.preventDefault();
+    if (key === 'z' && !e.shiftKey) undo();
+    else redo();
   });
 
   // Long-press handlers — amount cells and start reading cells
@@ -472,14 +500,8 @@ function setupEvents() {
     const period    = state.currentPeriod;
     if (!period) return;
 
-    let account, reading;
-    if (accountId === 0) {
-      account = state.masterMeter;
-      reading = period.masterReading;
-    } else {
-      account = accountsFor(period).find(a => a.id === accountId);
-      reading = period.readings.find(r => r.accountId === accountId);
-    }
+    const account = accountId === 0 ? state.masterMeter : accountsFor(period).find(a => a.id === accountId);
+    const reading = accountId === 0 ? period.masterReading : period.readings.find(r => r.accountId === accountId);
 
     if (account && reading) {
       const text = billing.buildSMSBody(account, reading, period, state.smsTemplate);
@@ -490,7 +512,7 @@ function setupEvents() {
   document.getElementById('amt-menu-sms').addEventListener('click', () => {
     const menu      = document.getElementById('amt-menu');
     const accountId = Number(menu.dataset.accountId);
-    const account   = state.accounts.find(a => a.id === accountId);
+    const account   = menuAccount(accountId);
     const phoneRow  = document.getElementById('amt-menu-phone-row');
     const phoneInput = document.getElementById('amt-menu-phone');
     const sendBtn   = document.getElementById('amt-menu-save-send');
@@ -505,16 +527,18 @@ function setupEvents() {
     const accountId = Number(menu.dataset.accountId);
     const phone     = document.getElementById('amt-menu-phone').value.trim();
     if (!phone) return;
-    const account = state.accounts.find(a => a.id === accountId);
+    const account = menuAccount(accountId);
     if (account) {
       account.phone = phone;
-      await db.saveAccount(account);
-      const amtEl = document.getElementById(`amt-${accountId}`);
-      if (amtEl) amtEl.classList.add('sms-trigger');
-      if (state.currentPeriod) {
-        const snap = state.currentPeriod.accountsSnapshot?.find(a => a.id === accountId);
+      if (accountId === 0) {
+        await db.setConfig('masterMeter', state.masterMeter);
+      } else {
+        await db.saveAccount(account);
+        const snap = state.currentPeriod?.accountsSnapshot?.find(a => a.id === accountId);
         if (snap) snap.phone = phone;
       }
+      const amtEl = document.getElementById(`amt-${accountId}`);
+      if (amtEl) amtEl.classList.add('sms-trigger');
     }
     hideAmountMenu();
     handleTextClick(accountId);
@@ -567,12 +591,13 @@ function handleReadingInput(e) {
 
   const field = e.target.dataset.field === 'start' ? 'startReading' : 'endReading';
 
+  // endReadingAt doubles as the reading's last-modified stamp for sync
+  // merging, so bump it on start-reading edits too — otherwise a corrected
+  // start reading loses to a stale copy from another device.
   if (accountId === 0) {
     if (!period.masterReading) period.masterReading = { startReading: null, endReading: null, endReadingAt: null };
     period.masterReading[field] = val === '' ? null : Number(val);
-    if (field === 'endReading') {
-      period.masterReading.endReadingAt = Date.now();
-    }
+    period.masterReading.endReadingAt = Date.now();
     ui.updateMasterRow(period, state.masterMeter);
   } else {
     let reading = period.readings.find(r => r.accountId === accountId);
@@ -581,9 +606,7 @@ function handleReadingInput(e) {
       period.readings.push(reading);
     }
     reading[field] = val === '' ? null : Number(val);
-    if (field === 'endReading') {
-      reading.endReadingAt = Date.now();
-    }
+    reading.endReadingAt = Date.now();
     ui.updateRow(accountId, period, accountsFor(period));
     ui.updateTotals(period, accountsFor(period));
   }
@@ -602,7 +625,7 @@ async function flushSave(period) {
   await db.savePeriod(period);
   const idx = state.periods.findIndex(p => p.id === period.id);
   if (idx >= 0) state.periods[idx] = period;
-  state.localDirty = true;
+  await setLocalDirty(true);
   syncToFile();
 }
 
@@ -691,19 +714,23 @@ async function handleNewPeriod() {
   const nm         = new Date(prevEnd.getFullYear(), prevEnd.getMonth() + 1, 1);
   const nextDay    = Math.min(billingDay, new Date(nm.getFullYear(), nm.getMonth() + 1, 0).getDate());
   const nextEnd    = new Date(nm.getFullYear(), nm.getMonth(), nextDay);
-  const endStr     = dateStr(nextEnd);
 
-  const [y, m, d] = endStr.split('-').map(Number);
+  const name = billing.monthLabel(nextEnd);
+  if (state.periods.some(p => p.name === name)) {
+    alert(`A sheet for ${name} already exists.`);
+    return;
+  }
+
   const period = billing.newPeriod(latest, state.accounts, state.masterMeter, state.rateTable);
-  period.endDate          = endStr;
-  period.name             = new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  period.endDate          = billing.toDateStr(nextEnd);
+  period.name             = name;
   period.accountsSnapshot = JSON.parse(JSON.stringify(state.accounts));
 
   const id = await db.savePeriod(period);
   period.id = id;
   state.periods.push(period);
   state.currentPeriodId = id;
-  state.localDirty = true;
+  await setLocalDirty(true);
   render();
   await trimOldPeriods();
   syncToFile();
@@ -717,7 +744,7 @@ async function handleDeletePeriod() {
   await db.deletePeriod(period.id);
   state.periods = state.periods.filter(p => p.id !== period.id);
   state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
-  state.localDirty = true;
+  await setLocalDirty(true);
   render();
   syncToFile();
 }
@@ -737,29 +764,28 @@ function closePeriodDialog() {
   document.getElementById('period-dialog').close();
 }
 
-function dateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
 async function confirmPeriod() {
   const endStr = document.getElementById('period-end-date').value;
   if (!endStr) { alert('Please enter the end date.'); return; }
 
+  const [y, m, d] = endStr.split('-').map(Number);
+  const name = billing.monthLabel(new Date(y, m - 1, d));
   let period;
 
   if (_periodIsFirst) {
-    const [y, m, d] = endStr.split('-').map(Number);
     // Treat the chosen day as the billing day going forward
     if (state.rateTable?.[0]) {
       state.rateTable[0][4] = d;
       await db.setConfig('rateTable', state.rateTable);
     }
-    const prevMonthSameDay = new Date(y, m - 2, d);
-    prevMonthSameDay.setDate(prevMonthSameDay.getDate() + 1);
-    const startStr = dateStr(prevMonthSameDay);
+    // Start = one month before the end date, plus one day. Clamp to the
+    // previous month's length so e.g. May 31 starts May 1, not May 2.
+    const prevMonthLen = new Date(y, m - 1, 0).getDate();
+    const startDate = new Date(y, m - 2, Math.min(d, prevMonthLen));
+    startDate.setDate(startDate.getDate() + 1);
     period = {
-      name: new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-      startDate: startStr,
+      name,
+      startDate: billing.toDateStr(startDate),
       endDate:   endStr,
       rateTableSnapshot: JSON.parse(JSON.stringify(state.rateTable)),
       accountsSnapshot: JSON.parse(JSON.stringify(state.accounts)),
@@ -771,12 +797,11 @@ async function confirmPeriod() {
     const latest = state.periods[state.periods.length - 1];
     const prevEnd = new Date(...latest.endDate.split('-').map((v, i) => i === 1 ? +v - 1 : +v));
     const startDate = new Date(prevEnd); startDate.setDate(prevEnd.getDate() + 1);
-    const startStr = dateStr(startDate);
-    if (endStr < startStr) { alert('End date must be after the previous period end.'); return; }
-    const [y, m, d] = endStr.split('-').map(Number);
+    if (endStr < billing.toDateStr(startDate)) { alert('End date must be after the previous period end.'); return; }
+    if (state.periods.some(p => p.name === name)) { alert(`A sheet for ${name} already exists.`); return; }
     period = billing.newPeriod(latest, state.accounts, state.masterMeter, state.rateTable);
     period.endDate          = endStr;
-    period.name             = new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    period.name             = name;
     period.accountsSnapshot = JSON.parse(JSON.stringify(state.accounts));
   }
 
@@ -784,7 +809,7 @@ async function confirmPeriod() {
   period.id = id;
   state.periods.push(period);
   state.currentPeriodId = id;
-  state.localDirty = true;
+  await setLocalDirty(true);
   if (_periodIsFirst) {
     state.lockStartReadings = false;
     updateLockReadingsButton();
@@ -808,7 +833,9 @@ async function handleProrate() {
     await db.savePeriod(period);
     const idx = state.periods.findIndex(p => p.id === period.id);
     if (idx >= 0) state.periods[idx] = period;
-    ui.renderPeriod(period, state.accounts, state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    await setLocalDirty(true);
+    ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    syncToFile();
     return;
   }
 
@@ -853,7 +880,7 @@ async function confirmProrate() {
   await db.savePeriod(period);
   const idx = state.periods.findIndex(p => p.id === period.id);
   if (idx >= 0) state.periods[idx] = period;
-  state.localDirty = true;
+  await setLocalDirty(true);
   document.getElementById('prorate-dialog').close();
   ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   syncToFile();
@@ -865,6 +892,7 @@ function clearSmsSentStatus() {
   const period = state.currentPeriod;
   if (!period) return;
   period.readings.forEach(r => { delete r.smsSentAt; });
+  if (period.masterReading) delete period.masterReading.smsSentAt;
   flushSave(period);
   ui.renderPeriod(period, accountsFor(period), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
 }
@@ -887,7 +915,7 @@ function repositionMenu(menu) {
 
 function showAmountMenu(cell, accountId) {
   const menu    = document.getElementById('amt-menu');
-  const account = state.accounts.find(a => a.id === accountId);
+  const account = menuAccount(accountId);
 
   menu.dataset.accountId    = accountId;
 
@@ -992,7 +1020,7 @@ async function saveSettings() {
   state.masterMeter = masterMeter;
   await db.setConfig('maxSheets', result.maxSheets);
   await db.setConfig('showMasterSection', result.showMasterSection);
-  state.localDirty = true;
+  await setLocalDirty(true);
 
   state.rateTable  = rateTable;
   state.accounts   = await db.getAccounts();
@@ -1044,32 +1072,32 @@ function pickFile(accept) {
   });
 }
 
+// Amount logic must match ui.js rowHTML: a fixed charge overrides the tiered bill.
+function periodAmount(account, gallons, period) {
+  if (account.fixedCharge != null) return account.fixedCharge;
+  return gallons != null ? billing.calcBill(gallons, period.rateTableSnapshot) : null;
+}
+
 function periodRows(period, accounts, masterMeter) {
   const readMap = new Map((period.readings || []).map(r => [r.accountId, r]));
   const rows = [];
+  let totalGal = 0, totalAmt = 0;
 
   for (const a of accounts) {
     const r = readMap.get(a.id);
     const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
-    const amt = g != null ? billing.calcBill(g, period.rateTableSnapshot) : null;
+    const amt = periodAmount(a, g, period);
+    if (amt != null) { totalGal += g ?? 0; totalAmt += amt; }
     rows.push([a.name, a.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', g ?? '', amt ?? '']);
   }
 
-  // Totals
-  let totalGal = 0, totalAmt = 0;
-  for (const a of accounts) {
-    const r = readMap.get(a.id);
-    if (!r) continue;
-    const g = billing.getGallons(r, period.normalizationFactor);
-    if (g != null) { totalGal += g; totalAmt += billing.calcBill(g, period.rateTableSnapshot); }
-  }
   rows.push(['Total', '', '', '', totalGal, +totalAmt.toFixed(2)]);
 
   // Master meter
   if (masterMeter) {
     const r = period.masterReading;
     const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
-    const amt = g != null ? billing.calcBill(g, period.rateTableSnapshot) : null;
+    const amt = periodAmount(masterMeter, g, period);
     rows.push([`Master Meter – ${masterMeter.name}`, masterMeter.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', g ?? '', amt ?? '']);
   }
 
@@ -1099,7 +1127,7 @@ function exportAllPeriodsXLSX() {
   const wb = XLSX.utils.book_new();
   for (const p of state.periods) {
     const name = p.name.slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, buildPeriodSheet(p, accountsFor(p)), name);
+    XLSX.utils.book_append_sheet(wb, buildPeriodSheet(p, accountsFor(p), state.masterMeter), name);
   }
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
   downloadFile(buf, 'water-billing-history.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -1127,10 +1155,10 @@ function showPeriodImportUI(backup) {
   if (!el) return;
   const exportedDate = backup.exportedAt ? new Date(backup.exportedAt).toLocaleString() : 'unknown date';
   const periods = [...backup.periods].sort((a, b) => (a.endDate ?? '').localeCompare(b.endDate ?? ''));
-  const opts = periods.map((p, i) => `<option value="${i}">${p.name ?? p.endDate}</option>`).join('');
+  const opts = periods.map((p, i) => `<option value="${i}">${ui.esc(p.name ?? p.endDate)}</option>`).join('');
   el.innerHTML = `
     <p style="font-size:12px;color:var(--muted);margin-bottom:8px">
-      Backup from ${exportedDate} · ${periods.length} period${periods.length !== 1 ? 's' : ''}
+      Backup from ${ui.esc(exportedDate)} · ${periods.length} period${periods.length !== 1 ? 's' : ''}
     </p>
     <select id="import-period-select" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;width:100%;margin-bottom:10px">
       <option value="__all__">All data — replaces everything</option>
@@ -1149,12 +1177,7 @@ function showPeriodImportUI(backup) {
       if (!confirm(`Restore backup from ${exportedDate}?\n\nThis will replace ALL current accounts, periods, and rates.`)) return;
       await applyBackupData(backup);
       closeSettings();
-      [state.periods, state.accounts, state.rateTable] = await Promise.all([
-        db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
-      ]);
-      state.lockStartReadings = true;
-      state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
-      state.sortConfig = { column: null, dir: 'asc' };
+      await reloadStateFromDB();
       render();
     } else {
       await importSinglePeriod(periods[Number(val)], backup.accounts ?? []);
@@ -1212,12 +1235,7 @@ async function restoreFromFile(file) {
   if (!confirm(`Restore backup from ${data.exportedAt ? new Date(data.exportedAt).toLocaleString() : 'unknown date'}?\n\nThis will replace ALL current accounts, periods, and rates.`)) return;
   await applyBackupData(data);
   closeSettings();
-  [state.periods, state.accounts, state.rateTable] = await Promise.all([
-    db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
-  ]);
-  state.lockStartReadings = true;
-  state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
-  state.sortConfig = { column: null, dir: 'asc' };
+  await reloadStateFromDB();
   render();
 }
 
@@ -1229,15 +1247,19 @@ async function pickAndRestoreBackup() {
 
 // ── File system sync ──────────────────────────────────────────────────────────
 
-function mergeReadings(basePeriods, otherPeriods) {
+// Merges otherPeriods into basePeriods (matched by name): per-account readings
+// with a newer endReadingAt win. With keepOtherOnly, periods that exist only
+// in otherPeriods are appended — used on pull so sheets created locally but
+// not yet pushed aren't wiped by the remote's structure.
+function mergeReadings(basePeriods, otherPeriods, { keepOtherOnly = false } = {}) {
   const otherMap = new Map(otherPeriods.map(p => [p.name, p]));
   let hadNewer = false;
   const merged = basePeriods.map(basePeriod => {
     const otherPeriod = otherMap.get(basePeriod.name);
     if (!otherPeriod) return basePeriod;
 
-    const otherReadingMap = new Map(otherPeriod.readings.map(r => [r.accountId, r]));
-    const mergedReadings = basePeriod.readings.map(baseReading => {
+    const otherReadingMap = new Map((otherPeriod.readings || []).map(r => [r.accountId, r]));
+    const mergedReadings = (basePeriod.readings || []).map(baseReading => {
       const otherReading = otherReadingMap.get(baseReading.accountId);
       if (!otherReading) return baseReading;
       const baseAt  = baseReading.endReadingAt  ?? 0;
@@ -1255,6 +1277,16 @@ function mergeReadings(basePeriods, otherPeriods) {
 
     return { ...basePeriod, readings: mergedReadings, masterReading: mergedMasterReading };
   });
+
+  if (keepOtherOnly) {
+    const baseNames = new Set(basePeriods.map(p => p.name));
+    const extras = otherPeriods.filter(p => !baseNames.has(p.name));
+    if (extras.length) {
+      hadNewer = true;
+      merged.push(...extras);
+      merged.sort((a, b) => a.endDate.localeCompare(b.endDate));
+    }
+  }
   return { merged, hadNewer };
 }
 
@@ -1302,16 +1334,43 @@ async function syncToFile() {
   } catch (e) { console.warn('Auto-save to file failed:', e); }
 }
 
+// Uploads the full local backup. Stores the new sha (and a synthesized etag —
+// GitHub's contents etag is the weak blob sha; if the format ever differs the
+// next GET just misses the 304 and self-corrects) and clears the dirty flag.
+async function pushLocal(key, sha) {
+  const localData = await buildBackupData();
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
+  const body = { message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`, content };
+  if (sha) body.sha = sha;
+
+  const putRes = await fetch(SYNC_URL, {
+    method: 'PUT',
+    headers: { 'X-Sync-Key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!putRes.ok) {
+    const err = await putRes.json().catch(() => ({}));
+    throw new Error(err.message || `HTTP ${putRes.status}`);
+  }
+  const newSha = (await putRes.json().catch(() => null))?.content?.sha;
+  if (newSha) {
+    await db.setConfig('lastGithubSha', newSha);
+    await db.setConfig('lastGithubEtag', `W/"${newSha}"`);
+  }
+  await setLocalDirty(false);
+  await db.setConfig('lastGithubSync', localData.exportedAt);
+}
+
 async function githubSync(isAuto = false) {
   const cfg = state.githubConfig;
   if (!cfg?.key) return;
 
   const btn = document.getElementById('btn-sync');
+  const origText = btn.textContent;
   if (!isAuto) {
     btn.disabled = true;
+    btn.textContent = '⟳';
   }
-  const origText = btn.textContent;
-  if (!isAuto) btn.textContent = '⟳';
 
   try {
     const headers = {
@@ -1320,39 +1379,22 @@ async function githubSync(isAuto = false) {
     };
 
     // Fetch remote file via Worker with ETag conditional (404 = first push, not an error)
-    let remoteData = null, remoteSha = null, remoteEtag = null;
     const lastGithubEtag = await db.getConfig('lastGithubEtag');
-    const lastGithubSha = await db.getConfig('lastGithubSha');
+    const lastGithubSha  = await db.getConfig('lastGithubSha');
     if (lastGithubEtag) headers['If-None-Match'] = lastGithubEtag;
 
     const res = await fetch(SYNC_URL, { headers });
     if (res.status === 304) {
       // Remote unchanged: only push if local is dirty
       if (state.localDirty && lastGithubSha) {
-        const localData = await buildBackupData();
-        const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
-        const putRes = await fetch(SYNC_URL, {
-          method: 'PUT',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
-            content,
-            sha: lastGithubSha,
-          }),
-        });
-        if (!putRes.ok) {
-          const err = await putRes.json().catch(() => ({}));
-          throw new Error(err.message || `HTTP ${putRes.status}`);
-        }
-        state.localDirty = false;
-        await db.setConfig('lastGithubSync', localData.exportedAt);
+        await pushLocal(cfg.key, lastGithubSha);
       }
     } else if (res.ok) {
       // Remote has new data: extract and store etag + sha
       const json = await res.json();
-      remoteSha = json.sha;
-      remoteEtag = res.headers.get('ETag');
-      remoteData = JSON.parse(atob(json.content.replace(/\n/g, '')));
+      const remoteSha  = json.sha;
+      const remoteEtag = res.headers.get('ETag');
+      const remoteData = JSON.parse(atob(json.content.replace(/\n/g, '')));
 
       if (remoteEtag) await db.setConfig('lastGithubEtag', remoteEtag);
       if (remoteSha) await db.setConfig('lastGithubSha', remoteSha);
@@ -1363,86 +1405,34 @@ async function githubSync(isAuto = false) {
       const remoteTime     = remoteData?.exportedAt ? Date.parse(remoteData.exportedAt) : 0;
 
       if (remoteTime > lastSyncedTime) {
-        // Pull: merge readings, accept remote structure
-        const { merged, hadNewer } = mergeReadings(remoteData.periods, state.periods);
-        remoteData.periods = merged;
+        // Pull: accept remote structure, but keep newer local readings and
+        // local-only sheets. Strip period ids before the rewrite — remote ids
+        // and local-only ids can collide, so let IndexedDB assign fresh ones.
+        const { merged, hadNewer } = mergeReadings(remoteData.periods || [], state.periods, { keepOtherOnly: true });
+        remoteData.periods = merged.map(({ id, ...rest }) => rest);
         await applyBackupData(remoteData);
-        [state.periods, state.accounts, state.rateTable] = await Promise.all([
-          db.getPeriods(), db.getAccounts(), db.getConfig('rateTable'),
-        ]);
-        state.lockStartReadings = true;
-        state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
-        state.sortConfig = { column: null, dir: 'asc' };
-        state.localDirty = false;
+        await reloadStateFromDB();
+        await setLocalDirty(false);
         render();
         await db.setConfig('lastGithubSync', remoteData.exportedAt);
 
-        // If local had newer readings, push merged result back to remote
-        if (hadNewer) {
-          const localData = await buildBackupData();
-          const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
-          const putRes = await fetch(SYNC_URL, {
-            method: 'PUT',
-            headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
-              content,
-              sha: remoteSha,
-            }),
-          });
-          if (!putRes.ok) {
-            const err = await putRes.json().catch(() => ({}));
-            throw new Error(err.message || `HTTP ${putRes.status}`);
-          }
-          await db.setConfig('lastGithubSync', localData.exportedAt);
-        }
+        // If local had newer readings or extra sheets, push the merged result back
+        if (hadNewer) await pushLocal(cfg.key, remoteSha);
       } else if (state.localDirty) {
-        // Push: merge readings into local before push, then send
-        const localData = await buildBackupData();
-        const { merged, hadNewer } = mergeReadings(localData.periods, remoteData.periods);
+        // Push: merge any newer remote readings into local first, then send
+        const { merged, hadNewer } = mergeReadings(state.periods, remoteData.periods || []);
         if (hadNewer) {
-          localData.periods = merged;
           await db.replaceAllPeriods(merged);
           state.periods = await db.getPeriods();
         }
-        const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
-        const putRes = await fetch(SYNC_URL, {
-          method: 'PUT',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
-            content,
-            sha: remoteSha,
-          }),
-        });
-        if (!putRes.ok) {
-          const err = await putRes.json().catch(() => ({}));
-          throw new Error(err.message || `HTTP ${putRes.status}`);
-        }
-        state.localDirty = false;
-        await db.setConfig('lastGithubSync', localData.exportedAt);
+        await pushLocal(cfg.key, remoteSha);
       }
-    } else if (res.status !== 404) {
+    } else if (res.status === 404) {
+      // First push
+      await pushLocal(cfg.key, null);
+    } else {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || `HTTP ${res.status}`);
-    } else {
-      // 404: first push
-      const localData = await buildBackupData();
-      const content = btoa(unescape(encodeURIComponent(JSON.stringify(localData, null, 2))));
-      const putRes = await fetch(SYNC_URL, {
-        method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `Water billing sync ${new Date().toISOString().slice(0, 10)}`,
-          content,
-        }),
-      });
-      if (!putRes.ok) {
-        const err = await putRes.json().catch(() => ({}));
-        throw new Error(err.message || `HTTP ${putRes.status}`);
-      }
-      state.localDirty = false;
-      await db.setConfig('lastGithubSync', localData.exportedAt);
     }
 
     if (!isAuto) {
@@ -1474,17 +1464,12 @@ async function chooseDataFile() {
     const file = await handle.getFile();
     if (file.size > 0 && confirm(`"${handle.name}" already has data. Restore from it?`)) {
       await applyBackupData(JSON.parse(await file.text()));
-      [state.accounts, state.periods, state.rateTable] = await Promise.all([
-        db.getAccounts(), db.getPeriods(), db.getConfig('rateTable'),
-      ]);
-      state.lockStartReadings = true;
-      state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
-      state.sortConfig = { column: null, dir: 'asc' };
+      await reloadStateFromDB();
     }
     await db.setConfig('dataFileHandle', handle);
     state.dataFileHandle = handle;
     await syncToFile();
-    ui.renderDataTab(!!state.currentPeriodId, handle);
+    ui.renderDataTab(!!state.currentPeriodId, handle, state.githubConfig, state.maxSheets);
     render();
   } catch (e) { if (e.name !== 'AbortError') console.error(e); }
 }
@@ -1492,18 +1477,16 @@ async function chooseDataFile() {
 async function unlinkDataFile() {
   await db.setConfig('dataFileHandle', null);
   state.dataFileHandle = null;
-  ui.renderDataTab(!!state.currentPeriodId, null);
+  ui.renderDataTab(!!state.currentPeriodId, null, state.githubConfig, state.maxSheets);
 }
 
 async function resetApp() {
   if (!confirm('Clear all local data and restart? Sync data on GitHub is preserved.')) return;
 
   try {
-    // Clear IndexedDB
-    const dbs = await indexedDB.databases();
-    for (const db of dbs) {
-      indexedDB.deleteDatabase(db.name);
-    }
+    // Close our connection and wait for the delete to finish — reloading
+    // while it's pending lets the new page reopen the DB and block it.
+    await db.deleteDB();
     // Clear service worker cache
     if ('caches' in window) {
       const cacheNames = await caches.keys();

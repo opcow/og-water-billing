@@ -5,11 +5,23 @@ const CORS = {
   'Access-Control-Expose-Headers': 'ETag',
 };
 
+// Caps PUT bodies; the GitHub contents API rejects large files anyway, so
+// anything bigger than this is junk or abuse.
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
+
+function keyMatches(given, expected) {
+  if (!expected || !given) return false;
+  const enc = new TextEncoder();
+  const a = enc.encode(given);
+  const b = enc.encode(expected);
+  return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
-    if (request.headers.get('X-Sync-Key') !== env.SYNC_KEY) {
+    if (!keyMatches(request.headers.get('X-Sync-Key'), env.SYNC_KEY)) {
       return new Response('Unauthorized', { status: 401, headers: CORS });
     }
 
@@ -36,10 +48,14 @@ export default {
     }
 
     if (request.method === 'PUT') {
+      const body = await request.text();
+      if (body.length > MAX_BODY_BYTES) {
+        return new Response('Payload too large', { status: 413, headers: CORS });
+      }
       const res = await fetch(apiUrl, {
         method: 'PUT',
         headers: { ...ghHeaders, 'Content-Type': 'application/json' },
-        body: await request.text(),
+        body,
       });
       return new Response(await res.text(), {
         status: res.status,
