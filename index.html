@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=28">
+  <link rel="stylesheet" href="css/styles.css?v=29">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -249,12 +249,12 @@
       <p style="margin-top:12px">
         <button id="btn-copy-sync-link" class="btn btn-secondary" style="font-size:13px">Copy Link</button>
       </p>
-      <input id="qr-link-input" type="text" readonly style="display:none;width:80%;max-width:400px;padding:8px;margin-top:8px;border:1px solid var(--border);border-radius:var(--radius);font-size:12px" />
+      <input id="qr-link-input" type="text" readonly style="display:block;width:80%;max-width:400px;padding:8px;margin:8px auto;border:1px solid var(--border);border-radius:var(--radius);font-size:12px;font-family:monospace" />
     </div>
   </dialog>
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=79"></script>
+  <script type="module" src="js/app.js?v=86"></script>
 </body>
 </html>

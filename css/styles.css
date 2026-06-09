@@ -8,6 +8,7 @@ body {
 }
 
 :root {
+  color-scheme: light;
   --blue:       #1565C0;
   --blue-light: #E3F2FD;
   --blue-mid:   #BBDEFB;
@@ -24,6 +25,7 @@ body {
 /* ── Dark mode ───────────────────────────────────────────────────────────── */
 
 html.dark {
+  color-scheme: dark;
   --blue-light: #1E3A5F;
   --blue-mid:   #1E4080;
   --bg:         #111827;

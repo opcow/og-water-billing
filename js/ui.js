@@ -1,4 +1,4 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=3';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=5';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -252,10 +252,13 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null,
       </p>
       <div style="display:flex;flex-direction:column;gap:8px">
         <label style="font-size:13px">Sync Key
-          <input type="password" id="sync-key"
-                 value="${esc(githubConfig?.key || '')}"
-                 placeholder="passphrase"
-                 style="width:100%;margin-top:4px">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <input type="password" id="sync-key"
+                   value="${esc(githubConfig?.key || '')}"
+                   placeholder="passphrase"
+                   style="width:100%;flex:1">
+            <button id="btn-toggle-sync-key" aria-label="Toggle sync key visibility" style="background:none;border:1px solid var(--border);border-radius:var(--radius);width:32px;height:32px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0">👁</button>
+          </div>
         </label>
         <button id="btn-show-qr" class="btn btn-secondary"${githubConfig?.key ? '' : ' hidden'} style="font-size:13px">QR Code</button>
       </div>

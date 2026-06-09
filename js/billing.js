@@ -63,7 +63,8 @@ export function proratePeriod(period, readingDay, billingDay) {
   const [ey, em] = period.endDate.split('-').map(Number);
   const readingDate   = new Date(ey, em - 1, readingDay);
   const start         = parseLocalDate(period.startDate);
-  const actualDays    = Math.round((readingDate - start) / 86400000);
+  // Date range is inclusive of both endpoints, so add 1 day.
+  const actualDays    = Math.round((readingDate - start) / 86400000) + 1;
   if (actualDays <= 0) return period;
 
   // Standard period: billing day of previous month → billing day of current month

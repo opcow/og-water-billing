@@ -1,6 +1,6 @@
-import * as db      from './db.js?v=4';
-import * as billing from './billing.js?v=4';
-import * as ui      from './ui.js?v=13';
+import * as db      from './db.js?v=5';
+import * as billing from './billing.js?v=5';
+import * as ui      from './ui.js?v=14';
 
 // Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
 
@@ -50,7 +50,9 @@ function buildSyncUrl() {
 function showQRDialog() {
   const el = document.getElementById('qr-canvas');
   el.innerHTML = '';
-  new QRCode(el, { text: buildSyncUrl(), width: 300, height: 300 });
+  const syncUrl = buildSyncUrl();
+  new QRCode(el, { text: syncUrl, width: 300, height: 300 });
+  document.getElementById('qr-link-input').value = syncUrl;
   document.getElementById('qr-dialog').showModal();
 }
 
@@ -352,6 +354,12 @@ function setupEvents() {
       } else {
         showSyncLinkFallback(syncUrl);
       }
+    }
+    if (e.target.id === 'btn-toggle-sync-key') {
+      const input = document.getElementById('sync-key');
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      e.target.textContent = isPassword ? '🙈' : '👁';
     }
   });
 
@@ -809,7 +817,8 @@ function updateProrateInfo() {
   const [sy, sm, sd] = period.startDate.split('-').map(Number);
   const readingDate   = new Date(ey, em - 1, readingDay);
   const startDate     = new Date(sy, sm - 1, sd);
-  const actualDays    = Math.round((readingDate - startDate) / 86400000);
+  // Date range is inclusive of both endpoints, so add 1 day.
+  const actualDays    = Math.round((readingDate - startDate) / 86400000) + 1;
   const expectedEnd   = new Date(ey, em - 1, billingDay);
   const expectedStart = new Date(ey, em - 2, billingDay);
   const expectedDays  = Math.round((expectedEnd - expectedStart) / 86400000);
