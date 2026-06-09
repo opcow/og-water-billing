@@ -105,15 +105,15 @@ const DEFAULT_RATE_TABLE = [
 ];
 
 const DEFAULT_ACCOUNTS = [
-  { name: '#2', accountHolder: '', phone: '', sortOrder: 0 },
-  { name: '#3', accountHolder: '', phone: '', sortOrder: 1 },
-  { name: '#4', accountHolder: '', phone: '', sortOrder: 2 },
-  { name: '#5', accountHolder: '', phone: '', sortOrder: 3 },
-  { name: '#6', accountHolder: '', phone: '', sortOrder: 4 },
-  { name: '#10', accountHolder: '', phone: '', sortOrder: 5 },
-  { name: '#11', accountHolder: '', phone: '', sortOrder: 6 },
-  { name: 'Pool Co.', accountHolder: '', phone: '', sortOrder: 7 },
-  { name: 'Emily', accountHolder: '', phone: '', sortOrder: 8 },
+  { name: 'Meter 1', accountHolder: '', phone: '', sortOrder: 0 },
+  { name: 'Meter 2', accountHolder: '', phone: '', sortOrder: 1 },
+  { name: 'Meter 3', accountHolder: '', phone: '', sortOrder: 2 },
+  { name: 'Meter 4', accountHolder: '', phone: '', sortOrder: 3 },
+  { name: 'Meter 5', accountHolder: '', phone: '', sortOrder: 4 },
+  { name: 'Meter 6', accountHolder: '', phone: '', sortOrder: 5 },
+  { name: 'Meter 7', accountHolder: '', phone: '', sortOrder: 6 },
+  { name: 'Meter 8', accountHolder: '', phone: '', sortOrder: 7 },
+  { name: 'Meter 9', accountHolder: '', phone: '', sortOrder: 8 },
 ];
 
 const DEFAULT_MASTER_METER = {
