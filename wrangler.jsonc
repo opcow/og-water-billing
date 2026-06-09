@@ -1,0 +1,12 @@
+{
+  "name": "water-billing-sync",
+  "main": "worker/index.js",
+  "compatibility_date": "2024-01-01",
+  "vars": {
+    "GITHUB_REPO": "opcow/gs_billing",
+    "FILE_PATH": "water-billing.json"
+  }
+  // Secrets — set with:
+  //   wrangler secret put GITHUB_TOKEN
+  //   wrangler secret put SYNC_KEY
+}
