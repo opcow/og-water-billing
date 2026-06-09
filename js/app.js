@@ -1,10 +1,13 @@
 import * as db      from './db.js?v=5';
 import * as billing from './billing.js?v=5';
-import * as ui      from './ui.js?v=14';
+import * as ui      from './ui.js?v=16';
 
 // Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
+
+const EYE_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.4 3.3M6.6 6.6A17.6 17.6 0 0 0 2 11s3.5 7 10 7a10.4 10.4 0 0 0 4.1-.8M9.5 9.5a3 3 0 0 0 4.2 4.2"/><path d="m2 2 20 20"/></svg>';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -355,11 +358,12 @@ function setupEvents() {
         showSyncLinkFallback(syncUrl);
       }
     }
-    if (e.target.id === 'btn-toggle-sync-key') {
-      const input = document.getElementById('sync-key');
-      const isPassword = input.type === 'password';
-      input.type = isPassword ? 'text' : 'password';
-      e.target.textContent = isPassword ? '🙈' : '👁';
+    const toggleKeyBtn = e.target.closest('#btn-toggle-sync-key');
+    if (toggleKeyBtn) {
+      const input  = document.getElementById('sync-key');
+      const masked = input.classList.toggle('masked');
+      toggleKeyBtn.title = masked ? 'Show key' : 'Hide key';
+      toggleKeyBtn.innerHTML = masked ? EYE_SVG : EYE_OFF_SVG;
     }
   });
 

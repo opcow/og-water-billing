@@ -357,6 +357,13 @@ td.col-amt {
 }
 .reading-input::-webkit-inner-spin-button,
 .reading-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+/* Visually masks an input without it being a real password field,
+   so the browser does not offer to save it as a credential. */
+input.masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
 .reading-input:focus {
   outline: 2px solid var(--blue);
   background: var(--blue-light);

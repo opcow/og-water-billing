@@ -253,11 +253,12 @@ export function renderDataTab(hasPeriod, fileHandle = null, githubConfig = null,
       <div style="display:flex;flex-direction:column;gap:8px">
         <label style="font-size:13px">Sync Key
           <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-            <input type="password" id="sync-key"
+            <input type="text" id="sync-key" class="masked"
                    value="${esc(githubConfig?.key || '')}"
                    placeholder="passphrase"
+                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                    style="width:100%;flex:1">
-            <button id="btn-toggle-sync-key" aria-label="Toggle sync key visibility" style="background:none;border:1px solid var(--border);border-radius:var(--radius);width:32px;height:32px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0">👁</button>
+            <button id="btn-toggle-sync-key" aria-label="Toggle sync key visibility" title="Show key" style="background:none;border:1px solid var(--border);border-radius:var(--radius);width:32px;height:32px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </div>
         </label>
         <button id="btn-show-qr" class="btn btn-secondary"${githubConfig?.key ? '' : ' hidden'} style="font-size:13px">QR Code</button>
