@@ -67,11 +67,25 @@ async function applySyncKey(key) {
   await githubSync();
 }
 
-function offerPendingSyncKey() {
-  const key = pendingSyncKey;
-  pendingSyncKey = null;
+// Route a key pasted into the URL hash (#sync=<key>), on initial load or when
+// the hash changes on an already-open page.
+function consumeSyncHash() {
+  if (!location.hash.startsWith('#sync=')) return;
+  const key = decodeURIComponent(location.hash.slice(6));
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!key) return;
+
+  const currentKey = state.githubConfig?.key ?? null;
+  if (currentKey === key) return;          // same key already set — nothing to do
+  if (!currentKey) { applySyncKey(key); return; }   // no existing key — apply silently
+  offerPendingSyncKey(key);                // different existing key — ask before overwrite
+}
+
+function offerPendingSyncKey(key) {
+  document.getElementById('sync-key-banner')?.remove();
 
   const banner = document.createElement('div');
+  banner.id = 'sync-key-banner';
   banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:var(--blue);color:white;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;z-index:999;box-shadow:0 2px 8px rgba(0,0,0,0.2)';
   banner.innerHTML = `<span>Apply sync key?</span><div style="display:flex;gap:8px"><button id="btn-sync-yes" class="btn" style="font-size:12px;padding:4px 12px;background:white;color:var(--blue);border:none;border-radius:var(--radius);cursor:pointer;font-weight:bold">Yes</button><button id="btn-sync-no" class="btn" style="font-size:12px;padding:4px 12px;background:transparent;color:white;border:1px solid white;border-radius:var(--radius);cursor:pointer">No</button></div>`;
   document.body.insertBefore(banner, document.body.firstChild);
@@ -91,15 +105,7 @@ function offerPendingSyncKey() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-let pendingSyncKey = null;
-
 async function init() {
-  const hash = location.hash;
-  if (hash.startsWith('#sync=')) {
-    pendingSyncKey = decodeURIComponent(hash.slice(6));
-    history.replaceState(null, '', location.pathname + location.search);
-  }
-
   await db.seedIfEmpty();
   [state.periods, state.accounts, state.masterMeter, state.rateTable, state.smsTemplate, state.maxSheets, state.showMasterSection] = await Promise.all([
     db.getPeriods(),
@@ -146,18 +152,8 @@ async function init() {
   document.getElementById('btn-theme').innerHTML = themeIconHTML(
     document.documentElement.classList.contains('dark'));
 
-  if (pendingSyncKey) {
-    const currentKey = state.githubConfig?.key ?? null;
-    if (currentKey === pendingSyncKey) {
-      pendingSyncKey = null;            // same key already set — nothing to do
-    } else if (!currentKey) {
-      const key = pendingSyncKey;
-      pendingSyncKey = null;
-      applySyncKey(key);                // no existing key — apply silently
-    } else {
-      offerPendingSyncKey();            // different existing key — ask before overwrite
-    }
-  }
+  window.addEventListener('hashchange', consumeSyncHash);
+  consumeSyncHash();
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
