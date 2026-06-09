@@ -446,7 +446,24 @@ function setupEvents() {
 
   // Amount menu buttons
   document.getElementById('amt-menu-copy').addEventListener('click', () => {
-    navigator.clipboard?.writeText(document.getElementById('amt-menu').dataset.amtText ?? '');
+    const menu      = document.getElementById('amt-menu');
+    const accountId = Number(menu.dataset.accountId);
+    const period    = state.currentPeriod;
+    if (!period) return;
+
+    let account, reading;
+    if (accountId === 0) {
+      account = state.masterMeter;
+      reading = period.masterReading;
+    } else {
+      account = accountsFor(period).find(a => a.id === accountId);
+      reading = period.readings.find(r => r.accountId === accountId);
+    }
+
+    if (account && reading) {
+      const text = billing.buildSMSBody(account, reading, period, state.smsTemplate);
+      navigator.clipboard?.writeText(text);
+    }
     hideAmountMenu();
   });
   document.getElementById('amt-menu-sms').addEventListener('click', () => {
@@ -851,7 +868,6 @@ function showAmountMenu(cell, accountId) {
   const account = state.accounts.find(a => a.id === accountId);
 
   menu.dataset.accountId    = accountId;
-  menu.dataset.amtText      = cell.textContent.trim();
 
   const rect = cell.getBoundingClientRect();
   menu.dataset.anchorTop    = rect.top;
