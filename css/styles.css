@@ -513,6 +513,9 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 }
 .rate-table input:focus { outline: 2px solid var(--blue); border-color: transparent; }
 .rate-table .final-tier { color: var(--muted); font-style: italic; padding: 7px 10px; }
+.tier-range-wrap { display: flex; align-items: center; gap: 6px; }
+.tier-range-prefix { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tier-range-wrap input { flex: 1; min-width: 60px; }
 
 /* ── Settings: accounts editor ───────────────────────────────────────────── */
 

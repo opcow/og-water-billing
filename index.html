@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=31">
+  <link rel="stylesheet" href="css/styles.css?v=32">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -135,13 +135,13 @@
           <button id="btn-toggle-lock-readings" class="btn btn-secondary" style="font-size:13px">Unlock Start Readings</button>
         </div>
         <p style="font-size:12px;color:#6B7280;margin-bottom:10px">
-          Each tier applies to gallons <em>above</em> the previous tier's limit.
-          The final ∞ row covers all remaining usage.
+          Enter the upper limit of each tier, as published in the utility's
+          rate table. The last row covers all remaining usage.
         </p>
         <table class="rate-table">
           <thead>
             <tr>
-              <th>Tier size (gal)</th>
+              <th>Gallons</th>
               <th>Rate ($/unit)</th>
               <th>Unit (gal)</th>
               <th></th>
@@ -255,6 +255,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=91"></script>
+  <script type="module" src="js/app.js?v=92"></script>
 </body>
 </html>

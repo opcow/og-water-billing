@@ -418,25 +418,53 @@ function updateSMSPreview() {
     .replace(/\{end\}/g,    '17265');
 }
 
+// Storage keeps tier *widths* (gs_billing-compatible), but the editor shows
+// cumulative upper bounds so the table reads like the city's published one:
+// "First 2,000 · 2,001 – 6,999 · 7,000+".
 function renderRateTiers(rateTable) {
   const tbody = document.getElementById('rate-table-body');
   // All but the last row are editable tiers; the last row (bracket === '-') is the final tier.
   const tiers   = rateTable.slice(0, -1);
   const lastRow = rateTable[rateTable.length - 1];
 
-  tbody.innerHTML = tiers.map((row, i) => `
+  let bound = 0;
+  tbody.innerHTML = tiers.map((row, i) => {
+    bound += row[0];
+    return `
     <tr class="tier-row" data-index="${i}">
-      <td><input type="number" class="tier-bracket" value="${row[0]}" min="1" placeholder="gallons"></td>
+      <td><span class="tier-range-wrap"><span class="tier-range-prefix"></span><input type="number" class="tier-bound" value="${bound}" min="1" placeholder="gallons"></span></td>
       <td><input type="number" class="tier-rate"    value="${row[1]}" min="0" step="0.01" placeholder="0.00"></td>
       <td><input type="number" class="tier-unit"    value="${row[2]}" min="1" placeholder="1000"></td>
       <td><button class="btn btn-danger btn-sm remove-tier" style="padding:3px 8px;font-size:12px">×</button></td>
-    </tr>`).join('') + `
+    </tr>`;
+  }).join('') + `
     <tr class="tier-row final-row">
-      <td class="final-tier">∞ (all remaining)</td>
+      <td class="final-tier"></td>
       <td><input type="number" class="tier-rate" value="${lastRow[1]}" min="0" step="0.01" placeholder="0.00"></td>
       <td><input type="number" class="tier-unit" value="${lastRow[2]}" min="1" placeholder="1000"></td>
       <td></td>
     </tr>`;
+  updateTierLabels();
+}
+
+// Recomputes the "2,001 –" prefixes and the final "7,000+" label from the
+// current upper-bound inputs. Called on render and whenever a bound changes.
+export function updateTierLabels() {
+  const tbody = document.getElementById('rate-table-body');
+  if (!tbody) return;
+  let prev = 0;
+  tbody.querySelectorAll('.tier-row:not(.final-row)').forEach((row, i) => {
+    row.querySelector('.tier-range-prefix').textContent =
+      i === 0 ? 'First' : `${(prev + 1).toLocaleString('en-US')} –`;
+    const bound = parseInt(row.querySelector('.tier-bound')?.value, 10);
+    if (bound > prev) prev = bound;
+  });
+  const finalCell = tbody.querySelector('.final-row .final-tier');
+  if (finalCell) {
+    finalCell.textContent = prev > 0
+      ? `${(prev + 1).toLocaleString('en-US')}+ (all remaining)`
+      : 'All gallons';
+  }
 }
 
 export function addRateTierRow() {
@@ -447,11 +475,12 @@ export function addRateTierRow() {
   const idx = tbody.querySelectorAll('.tier-row:not(.final-row)').length;
   newRow.dataset.index = idx;
   newRow.innerHTML = `
-    <td><input type="number" class="tier-bracket" value="" min="1" placeholder="gallons"></td>
+    <td><span class="tier-range-wrap"><span class="tier-range-prefix"></span><input type="number" class="tier-bound" value="" min="1" placeholder="gallons"></span></td>
     <td><input type="number" class="tier-rate"    value="" min="0" step="0.01" placeholder="0.00"></td>
     <td><input type="number" class="tier-unit"    value="1000" min="1" placeholder="1000"></td>
     <td><button class="btn btn-danger btn-sm remove-tier" style="padding:3px 8px;font-size:12px">×</button></td>`;
   tbody.insertBefore(newRow, finalRow);
+  updateTierLabels();
 }
 
 function renderAccountsEditor(accounts, masterMeter) {
@@ -562,23 +591,30 @@ export function collectSettings() {
   const rows = document.querySelectorAll('#rate-table-body .tier-row');
   const rateTable = [];
 
-  rows.forEach((row, i) => {
+  // Inputs hold cumulative upper bounds; storage wants tier widths
+  // (bound minus the previous bound).
+  let prevBound = 0;
+  let boundError = false;
+  rows.forEach(row => {
     const isFinal = row.classList.contains('final-row');
     const rate    = parseFloat(row.querySelector('.tier-rate')?.value) || 0;
     const unit    = parseInt(row.querySelector('.tier-unit')?.value, 10) || 1000;
 
     if (isFinal) {
-      const entry = ['-', rate, unit];
-      if (i === 0) { entry.push(baseCharge, billingDay); }
-      rateTable.push(entry);
+      rateTable.push(['-', rate, unit]);
     } else {
-      const bracket = parseInt(row.querySelector('.tier-bracket')?.value, 10);
-      if (!bracket) return; // skip blank rows
-      const entry = [bracket, rate, unit];
-      if (i === 0) { entry.push(baseCharge, billingDay); }
-      rateTable.push(entry);
+      const bound = parseInt(row.querySelector('.tier-bound')?.value, 10);
+      if (!bound) return; // skip blank rows
+      if (bound <= prevBound) { boundError = true; return; }
+      rateTable.push([bound - prevBound, rate, unit]);
+      prevBound = bound;
     }
   });
+
+  if (boundError) {
+    alert("Each tier's upper limit must be greater than the previous tier's.");
+    return null;
+  }
 
   // Ensure base charge, billing day, and due day are on row[0]
   if (rateTable.length > 0) {

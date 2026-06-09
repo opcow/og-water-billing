@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=6';
 import * as billing from './billing.js?v=6';
-import * as ui      from './ui.js?v=17';
+import * as ui      from './ui.js?v=18';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -556,7 +556,14 @@ function setupEvents() {
 
   // Remove buttons in settings — event delegation
   document.getElementById('rate-table-body').addEventListener('click', e => {
-    if (e.target.matches('.remove-tier')) e.target.closest('.tier-row').remove();
+    if (e.target.matches('.remove-tier')) {
+      e.target.closest('.tier-row').remove();
+      ui.updateTierLabels();
+    }
+  });
+  // Keep the "2,001 –" range labels in sync while tier bounds are edited
+  document.getElementById('rate-table-body').addEventListener('input', e => {
+    if (e.target.matches('.tier-bound')) ui.updateTierLabels();
   });
   document.getElementById('accounts-editor').addEventListener('click', e => {
     if (e.target.matches('.remove-account')) e.target.closest('.account-row').remove();
