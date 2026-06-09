@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=27">
+  <link rel="stylesheet" href="css/styles.css?v=28">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -233,6 +233,10 @@
     </div>
   </div>
 
+  <div id="start-menu" class="amt-context-menu" hidden>
+    <button id="start-menu-unlock" class="amt-menu-btn">Unlock Start Readings</button>
+  </div>
+
   <!-- QR Code dialog -->
   <dialog id="qr-dialog" class="period-dialog">
     <div class="dialog-header">
@@ -251,6 +255,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=76"></script>
+  <script type="module" src="js/app.js?v=78"></script>
 </body>
 </html>

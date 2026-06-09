@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=4';
 import * as billing from './billing.js?v=4';
-import * as ui      from './ui.js?v=12';
+import * as ui      from './ui.js?v=13';
 
 // Note: app.js v51 requires Worker and SW updates (ETag + dirty flag)
 
@@ -382,44 +382,66 @@ function setupEvents() {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
   });
 
-  // Amount cell — long-press shows Copy / Send Text menu
+  // Long-press handlers — amount cells and start reading cells
   let pressStartPos = null;
+  let pressedCell = null;
   document.addEventListener('pointerdown', e => {
-    const cell = e.target.closest('td.col-amt[data-account-id]');
-    if (!cell || cell.textContent.trim() === '—') return;
-    pressStartPos = { x: e.clientX, y: e.clientY };
-    longPressTimer = setTimeout(() => {
-      longPressTimer = null;
-      pressStartPos  = null;
-      showAmountMenu(cell, Number(cell.dataset.accountId));
-    }, 500);
+    const amtCell = e.target.closest('td.col-amt[data-account-id]');
+    const nameCell = e.target.closest('td.col-name[data-account-id]');
+    const startCell = e.target.closest('td.col-start');
+
+    if ((amtCell || nameCell) && e.target.textContent.trim() !== '—') {
+      const cell = amtCell || nameCell;
+      pressedCell = { type: 'amount', cell: cell, accountId: Number(cell.dataset.accountId) };
+      pressStartPos = { x: e.clientX, y: e.clientY };
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        pressStartPos = null;
+        showAmountMenu(pressedCell.cell, pressedCell.accountId);
+        pressedCell = null;
+      }, 500);
+    } else if (startCell && state.lockStartReadings) {
+      pressedCell = { type: 'start', cell: startCell };
+      pressStartPos = { x: e.clientX, y: e.clientY };
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        pressStartPos = null;
+        showStartMenu(pressedCell.cell);
+        pressedCell = null;
+      }, 500);
+    }
   });
   document.addEventListener('pointermove', e => {
     if (!longPressTimer || !pressStartPos) return;
     if (Math.abs(e.clientX - pressStartPos.x) > 8 || Math.abs(e.clientY - pressStartPos.y) > 8) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
-      pressStartPos  = null;
+      pressStartPos = null;
+      pressedCell = null;
     }
   });
-  document.addEventListener('pointerup',     () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; });
-  document.addEventListener('pointercancel', () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; });
+  document.addEventListener('pointerup',     () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; pressedCell = null; });
+  document.addEventListener('pointercancel', () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; pressedCell = null; });
 
-  // Dismiss amount menu on outside press
+  // Dismiss menus on outside press
   document.addEventListener('pointerdown', e => {
-    const menu = document.getElementById('amt-menu');
-    if (!menu.hidden && !menu.contains(e.target)) hideAmountMenu();
+    const amtMenu = document.getElementById('amt-menu');
+    const startMenu = document.getElementById('start-menu');
+    if (!amtMenu.hidden && !amtMenu.contains(e.target)) hideAmountMenu();
+    if (!startMenu.hidden && !startMenu.contains(e.target)) startMenu.hidden = true;
   }, { capture: true });
 
-  // Suppress native context menu on amount cells (prevents iOS long-press copy menu)
+  // Suppress native context menu on name, amount, and start cells (prevents iOS long-press copy menu)
   document.addEventListener('contextmenu', e => {
-    if (e.target.closest('td.col-amt[data-account-id]')) e.preventDefault();
+    if (e.target.closest('td.col-name[data-account-id]') || e.target.closest('td.col-amt[data-account-id]') || e.target.closest('td.col-start')) e.preventDefault();
   });
 
-  // Reposition when soft keyboard appears / disappears
+  // Reposition menus when soft keyboard appears / disappears
   window.visualViewport?.addEventListener('resize', () => {
-    const menu = document.getElementById('amt-menu');
-    if (!menu.hidden) repositionMenu(menu);
+    const amtMenu = document.getElementById('amt-menu');
+    const startMenu = document.getElementById('start-menu');
+    if (!amtMenu.hidden) repositionMenu(amtMenu);
+    if (!startMenu.hidden) repositionMenu(startMenu);
   });
 
   // Amount menu buttons
@@ -458,6 +480,16 @@ function setupEvents() {
     }
     hideAmountMenu();
     handleTextClick(accountId);
+  });
+
+  // Start readings menu unlock button
+  document.getElementById('start-menu-unlock').addEventListener('click', () => {
+    state.lockStartReadings = false;
+    updateLockReadingsButton();
+    if (state.currentPeriod) {
+      ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    }
+    document.getElementById('start-menu').hidden = true;
   });
 
   // Remove buttons in settings — event delegation
@@ -715,6 +747,10 @@ async function confirmPeriod() {
   state.periods.push(period);
   state.currentPeriodId = id;
   state.localDirty = true;
+  if (_periodIsFirst) {
+    state.lockStartReadings = false;
+    updateLockReadingsButton();
+  }
   closePeriodDialog();
   render();
   await trimOldPeriods();
@@ -826,6 +862,16 @@ function showAmountMenu(cell, accountId) {
   document.getElementById('amt-menu-phone').value = '';
   document.getElementById('amt-menu-sms').textContent = account?.phone ? 'Send Text' : 'Send Text…';
 
+  menu.hidden = false;
+  repositionMenu(menu);
+}
+
+function showStartMenu(cell) {
+  const menu = document.getElementById('start-menu');
+  const rect = cell.getBoundingClientRect();
+  menu.dataset.anchorTop    = rect.top;
+  menu.dataset.anchorBottom = rect.bottom;
+  menu.dataset.anchorLeft   = rect.left;
   menu.hidden = false;
   repositionMenu(menu);
 }

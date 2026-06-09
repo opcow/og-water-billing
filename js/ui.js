@@ -138,7 +138,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
 
   return `
     <tr data-account-id="${account.id}">
-      <td>${esc(account.name)}</td>
+      <td class="col-name" data-account-id="${account.id}">${esc(account.name)}</td>
       ${startCell}
       <td class="num col-end${defClass}" style="padding:4px 14px">
         <input type="number" class="reading-input"
