@@ -59,6 +59,14 @@ function showQRDialog() {
   document.getElementById('qr-dialog').showModal();
 }
 
+async function applySyncKey(key) {
+  state.githubConfig = { key };
+  await db.setConfig('githubConfig', state.githubConfig);
+  document.getElementById('btn-sync').hidden = false;
+  render();
+  await githubSync();
+}
+
 function offerPendingSyncKey() {
   const key = pendingSyncKey;
   pendingSyncKey = null;
@@ -70,11 +78,7 @@ function offerPendingSyncKey() {
 
   const onYes = async () => {
     banner.remove();
-    state.githubConfig = { key };
-    await db.setConfig('githubConfig', state.githubConfig);
-    document.getElementById('btn-sync').hidden = false;
-    render();
-    await githubSync();
+    await applySyncKey(key);
   };
 
   const onNo = () => {
@@ -137,14 +141,23 @@ async function init() {
   }
 
   render();
-  if (pendingSyncKey) {
-    offerPendingSyncKey();
-  }
   setupEvents();
   registerSW();
   document.getElementById('btn-theme').innerHTML = themeIconHTML(
     document.documentElement.classList.contains('dark'));
 
+  if (pendingSyncKey) {
+    const currentKey = state.githubConfig?.key ?? null;
+    if (currentKey === pendingSyncKey) {
+      pendingSyncKey = null;            // same key already set — nothing to do
+    } else if (!currentKey) {
+      const key = pendingSyncKey;
+      pendingSyncKey = null;
+      applySyncKey(key);                // no existing key — apply silently
+    } else {
+      offerPendingSyncKey();            // different existing key — ask before overwrite
+    }
+  }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
