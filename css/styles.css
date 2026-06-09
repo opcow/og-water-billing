@@ -685,9 +685,16 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 
   .app-main { padding: 12px; }
 
-  /* Hide non-essential columns */
-  .billing-table .col-start,
-  .billing-table .col-gal { display: none; }
+  /* Hide the Prev column; squeeze the others so Gal fits */
+  .billing-table .col-start { display: none; }
+  .billing-table .reading-col { width: 96px; }
+  .billing-table .col-gal { width: 62px; }
+  .billing-table .col-amt { width: 86px; }
+  .billing-table th.col-gal,
+  .billing-table td.col-gal { padding-left: 4px; padding-right: 6px; }
+  .billing-table th.col-amt,
+  .billing-table td.col-amt { padding-left: 4px; }
+  .billing-table td.col-gal { font-size: 13px; }
 
   /* Prevent iOS tap-zoom (font-size < 16px triggers zoom); larger touch targets */
   .reading-input { font-size: 16px; }
