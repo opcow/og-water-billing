@@ -1,4 +1,4 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=6';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=7';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -98,10 +98,9 @@ function applySortConfig(list, period, readMap, { column, dir }) {
 function sortVal(account, column, period, readMap) {
   if (column === 'name') return account.name.toLowerCase();
   const r = readMap.get(account.id);
-  if (!r) return null;
-  if (column === 'gallons') return getGallons(r, period.normalizationFactor);
-  const g = getGallons(r, period.normalizationFactor);
-  return g != null ? calcBill(g, period.rateTableSnapshot) : null;
+  const g = r ? getGallons(r, period.normalizationFactor) : null;
+  if (column === 'gallons') return account.meterDefective ? null : g;
+  return accountAmount(account, g, period);
 }
 
 function updateSortIndicators({ column, dir }) {
@@ -120,11 +119,19 @@ function isBadReading(reading) {
 
 const BAD_READING_TITLE = 'End reading is less than start reading';
 
+// Must match periodAmount in app.js and buildSMSBody in billing.js: a fixed
+// charge overrides everything; otherwise at least the base charge is owed,
+// so this never returns null. A defective meter's readings don't count.
+function accountAmount(account, g, period) {
+  if (account?.fixedCharge != null) return account.fixedCharge;
+  if (account?.meterDefective) g = null;
+  return calcBill(g ?? 0, period.rateTableSnapshot);
+}
+
 function rowHTML(account, reading, period, lockStartReadings) {
   const g      = reading ? getGallons(reading, period.normalizationFactor) : null;
   const bad    = isBadReading(reading);
-  const amount = account.fixedCharge != null ? account.fixedCharge
-               : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
+  const amount = accountAmount(account, g, period);
   const startV = reading?.startReading ?? '';
   const endV   = reading?.endReading ?? '';
   const amtClass = `num col-amt${account.phone ? ' sms-trigger' : ''}${reading?.smsSentAt ? ' sms-sent' : ''}`;
@@ -156,8 +163,8 @@ function rowHTML(account, reading, period, lockStartReadings) {
           placeholder="—"
           min="0"${disabledAttr}>
       </td>
-      <td class="num col-gal${bad ? ' usage-warning' : ''}" id="gal-${account.id}"${bad ? ` title="${BAD_READING_TITLE}"` : ''}>${g != null ? formatNumber(g) : '—'}</td>
-      <td class="${amtClass}" id="amt-${account.id}"${amtData}>${amount != null ? formatCurrency(amount) : '—'}</td>
+      <td class="num col-gal${defClass}${!account.meterDefective && bad ? ' usage-warning' : ''}" id="gal-${account.id}"${!account.meterDefective && bad ? ` title="${BAD_READING_TITLE}"` : ''}>${account.meterDefective ? '—' : (g != null ? formatNumber(g) : '—')}</td>
+      <td class="${amtClass}" id="amt-${account.id}"${amtData}>${formatCurrency(amount)}</td>
     </tr>`;
 }
 
@@ -166,18 +173,18 @@ export function updateRow(accountId, period, accounts) {
   if (!reading) return;
   const account = accounts?.find(a => a.id === accountId);
   const g      = getGallons(reading, period.normalizationFactor);
-  const amount = account?.fixedCharge != null ? account.fixedCharge
-               : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
+  const amount = accountAmount(account, g, period);
   const galEl  = document.getElementById(`gal-${accountId}`);
   const amtEl  = document.getElementById(`amt-${accountId}`);
   if (galEl) {
-    galEl.textContent = g != null ? formatNumber(g) : '—';
-    const bad = isBadReading(reading);
+    const defective = !!account?.meterDefective;
+    galEl.textContent = defective ? '—' : (g != null ? formatNumber(g) : '—');
+    const bad = !defective && isBadReading(reading);
     galEl.classList.toggle('usage-warning', bad);
     galEl.title = bad ? BAD_READING_TITLE : '';
   }
   if (amtEl) {
-    amtEl.textContent = amount != null ? formatCurrency(amount) : '—';
+    amtEl.textContent = formatCurrency(amount);
     amtEl.classList.toggle('sms-sent', !!reading.smsSentAt);
   }
 }
@@ -186,18 +193,18 @@ export function updateMasterRow(period, masterMeter) {
   const reading = period.masterReading;
   if (!reading) return;
   const g      = getGallons(reading, period.normalizationFactor);
-  const amount = masterMeter?.fixedCharge != null ? masterMeter.fixedCharge
-               : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
+  const amount = accountAmount(masterMeter, g, period);
   const galEl  = document.getElementById('gal-0');
   const amtEl  = document.getElementById('amt-0');
   if (galEl) {
-    galEl.textContent = g != null ? formatNumber(g) : '—';
-    const bad = isBadReading(reading);
+    const defective = !!masterMeter?.meterDefective;
+    galEl.textContent = defective ? '—' : (g != null ? formatNumber(g) : '—');
+    const bad = !defective && isBadReading(reading);
     galEl.classList.toggle('usage-warning', bad);
     galEl.title = bad ? BAD_READING_TITLE : '';
   }
   if (amtEl) {
-    amtEl.textContent = amount != null ? formatCurrency(amount) : '—';
+    amtEl.textContent = formatCurrency(amount);
     amtEl.classList.toggle('sms-sent', !!reading.smsSentAt);
   }
 }
@@ -208,14 +215,13 @@ export function updateTotals(period, accounts) {
 }
 
 function renderTotals(period, nonMaster, readMap) {
-  let totalGal = 0, totalAmt = 0, hasAny = false;
+  let totalGal = 0, totalAmt = 0;
+  const hasAny = nonMaster.length > 0;
   for (const a of nonMaster) {
     const r = readMap.get(a.id);
-    if (!r && a.fixedCharge == null) continue;
-    const g   = r ? getGallons(r, period.normalizationFactor) : null;
-    const amt = a.fixedCharge != null ? a.fixedCharge
-              : (g != null ? calcBill(g, period.rateTableSnapshot) : null);
-    if (amt != null) { totalGal += g ?? 0; totalAmt += amt; hasAny = true; }
+    const g = r ? getGallons(r, period.normalizationFactor) : null;
+    totalAmt += accountAmount(a, g, period);
+    if (!a.meterDefective) totalGal += g ?? 0;
   }
   document.getElementById('billing-foot').innerHTML = `
     <tr class="totals-row">

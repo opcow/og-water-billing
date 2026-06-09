@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=6';
-import * as billing from './billing.js?v=6';
-import * as ui      from './ui.js?v=18';
+import * as billing from './billing.js?v=7';
+import * as ui      from './ui.js?v=21';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -1079,10 +1079,13 @@ function pickFile(accept) {
   });
 }
 
-// Amount logic must match ui.js rowHTML: a fixed charge overrides the tiered bill.
+// Amount logic must match ui.js accountAmount: a fixed charge overrides
+// everything; otherwise at least the base charge is owed, so this never
+// returns null. A defective meter's readings don't count.
 function periodAmount(account, gallons, period) {
   if (account.fixedCharge != null) return account.fixedCharge;
-  return gallons != null ? billing.calcBill(gallons, period.rateTableSnapshot) : null;
+  if (account.meterDefective) gallons = null;
+  return billing.calcBill(gallons ?? 0, period.rateTableSnapshot);
 }
 
 function periodRows(period, accounts, masterMeter) {
@@ -1094,8 +1097,9 @@ function periodRows(period, accounts, masterMeter) {
     const r = readMap.get(a.id);
     const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
     const amt = periodAmount(a, g, period);
-    if (amt != null) { totalGal += g ?? 0; totalAmt += amt; }
-    rows.push([a.name, a.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', g ?? '', amt ?? '']);
+    if (!a.meterDefective) totalGal += g ?? 0;
+    totalAmt += amt;
+    rows.push([a.name, a.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', a.meterDefective ? '' : (g ?? ''), amt]);
   }
 
   rows.push(['Total', '', '', '', totalGal, +totalAmt.toFixed(2)]);
@@ -1105,7 +1109,7 @@ function periodRows(period, accounts, masterMeter) {
     const r = period.masterReading;
     const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
     const amt = periodAmount(masterMeter, g, period);
-    rows.push([`Master Meter – ${masterMeter.name}`, masterMeter.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', g ?? '', amt ?? '']);
+    rows.push([`Master Meter – ${masterMeter.name}`, masterMeter.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', masterMeter.meterDefective ? '' : (g ?? ''), amt]);
   }
 
   return rows;

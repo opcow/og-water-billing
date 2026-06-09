@@ -73,10 +73,11 @@ const DEFAULT_SMS_TEMPLATE = 'Water Bill — {period}\n{holder}: {gallons}\nTota
 
 export function buildSMSBody(account, reading, period, template) {
   const g = getGallons(reading, period.normalizationFactor);
-  const amount = account.fixedCharge != null
-    ? account.fixedCharge
+  const amount = account.fixedCharge != null ? account.fixedCharge
+    : account.meterDefective ? calcBill(0, period.rateTableSnapshot)
     : calcBill(g ?? 0, period.rateTableSnapshot);
-  const galStr = g != null ? g.toLocaleString() + ' gal' : 'no reading';
+  const galStr = account.meterDefective ? 'meter defective'
+    : g != null ? g.toLocaleString() + ' gal' : 'no reading';
   const dueDay = period.rateTableSnapshot[0][5] ?? 20;
   const [ey, em] = period.endDate.split('-').map(Number);
   const due = new Date(ey, em - 1, dueDay);
