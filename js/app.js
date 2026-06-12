@@ -837,6 +837,14 @@ async function handleProrate() {
     if (!confirm('Clear normalization and revert to actual readings?')) return;
     period.normalizationFactor = null;
     delete period.readingDay;
+    if (period.originalReadings) {
+      period.readings = period.originalReadings;
+      delete period.originalReadings;
+    }
+    if (period.originalMasterReading !== undefined) {
+      period.masterReading = period.originalMasterReading;
+      delete period.originalMasterReading;
+    }
     await db.savePeriod(period);
     const idx = state.periods.findIndex(p => p.id === period.id);
     if (idx >= 0) state.periods[idx] = period;
@@ -1095,7 +1103,7 @@ function periodRows(period, accounts, masterMeter) {
 
   for (const a of accounts) {
     const r = readMap.get(a.id);
-    const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
+    const g = r ? billing.getGallons(r) : null;
     const amt = periodAmount(a, g, period);
     if (!a.meterDefective) totalGal += g ?? 0;
     totalAmt += amt;
@@ -1107,7 +1115,7 @@ function periodRows(period, accounts, masterMeter) {
   // Master meter
   if (masterMeter) {
     const r = period.masterReading;
-    const g = r ? billing.getGallons(r, period.normalizationFactor) : null;
+    const g = r ? billing.getGallons(r) : null;
     const amt = periodAmount(masterMeter, g, period);
     rows.push([`Master Meter – ${masterMeter.name}`, masterMeter.accountHolder || '', r?.startReading ?? '', r?.endReading ?? '', masterMeter.meterDefective ? '' : (g ?? ''), amt]);
   }

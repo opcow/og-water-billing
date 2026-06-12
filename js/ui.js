@@ -98,7 +98,7 @@ function applySortConfig(list, period, readMap, { column, dir }) {
 function sortVal(account, column, period, readMap) {
   if (column === 'name') return account.name.toLowerCase();
   const r = readMap.get(account.id);
-  const g = r ? getGallons(r, period.normalizationFactor) : null;
+  const g = r ? getGallons(r) : null;
   if (column === 'gallons') return account.meterDefective ? null : g;
   return accountAmount(account, g, period);
 }
@@ -129,7 +129,7 @@ function accountAmount(account, g, period) {
 }
 
 function rowHTML(account, reading, period, lockStartReadings) {
-  const g      = reading ? getGallons(reading, period.normalizationFactor) : null;
+  const g      = reading ? getGallons(reading) : null;
   const bad    = isBadReading(reading);
   const amount = accountAmount(account, g, period);
   const startV = reading?.startReading ?? '';
@@ -172,7 +172,7 @@ export function updateRow(accountId, period, accounts) {
   const reading = period.readings.find(r => r.accountId === accountId);
   if (!reading) return;
   const account = accounts?.find(a => a.id === accountId);
-  const g      = getGallons(reading, period.normalizationFactor);
+  const g      = getGallons(reading);
   const amount = accountAmount(account, g, period);
   const galEl  = document.getElementById(`gal-${accountId}`);
   const amtEl  = document.getElementById(`amt-${accountId}`);
@@ -192,7 +192,7 @@ export function updateRow(accountId, period, accounts) {
 export function updateMasterRow(period, masterMeter) {
   const reading = period.masterReading;
   if (!reading) return;
-  const g      = getGallons(reading, period.normalizationFactor);
+  const g      = getGallons(reading);
   const amount = accountAmount(masterMeter, g, period);
   const galEl  = document.getElementById('gal-0');
   const amtEl  = document.getElementById('amt-0');
@@ -219,7 +219,7 @@ function renderTotals(period, nonMaster, readMap) {
   const hasAny = nonMaster.length > 0;
   for (const a of nonMaster) {
     const r = readMap.get(a.id);
-    const g = r ? getGallons(r, period.normalizationFactor) : null;
+    const g = r ? getGallons(r) : null;
     totalAmt += accountAmount(a, g, period);
     if (!a.meterDefective) totalGal += g ?? 0;
   }

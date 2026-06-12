@@ -15,11 +15,9 @@ export function calcBill(gal, rateTable) {
   return Math.ceil(Math.round(total * 10000) / 100) / 100;
 }
 
-export function getGallons(reading, normFactor) {
+export function getGallons(reading) {
   if (reading.startReading == null || reading.endReading == null) return null;
-  const raw = Math.max(0, reading.endReading - reading.startReading);
-  if (!normFactor || normFactor === 1) return raw;
-  return Math.floor(raw * normFactor / 10) * 10;
+  return Math.max(0, reading.endReading - reading.startReading);
 }
 
 // Returns a period without name/endDate — callers compute and assign those.
@@ -66,13 +64,34 @@ export function proratePeriod(period, readingDay, billingDay) {
   const expectedStart = new Date(ey, em - 2, billingDay);
   const expectedDays  = Math.round((expectedEnd - expectedStart) / 86400000);
 
-  return { ...period, normalizationFactor: expectedDays / actualDays, readingDay };
+  const normalizationFactor = expectedDays / actualDays;
+
+  // Adjust endReading so the adjusted gallons are baked into the reading itself.
+  // Next period's startReading inherits this adjusted value, reconciling the overlap.
+  const adjust = (s, e) => {
+    if (s == null || e == null) return e;
+    return s + Math.round(Math.max(0, e - s) * normalizationFactor / 10) * 10;
+  };
+
+  const adjustedReadings = period.readings.map(r => ({ ...r, endReading: adjust(r.startReading, r.endReading) }));
+  const mr = period.masterReading;
+  const adjustedMaster = mr ? { ...mr, endReading: adjust(mr.startReading, mr.endReading) } : mr;
+
+  return {
+    ...period,
+    readings: adjustedReadings,
+    masterReading: adjustedMaster,
+    originalReadings: period.readings,
+    originalMasterReading: period.masterReading,
+    normalizationFactor,
+    readingDay,
+  };
 }
 
 const DEFAULT_SMS_TEMPLATE = 'Water Bill — {period}\n{holder}: {gallons}\nTotal: {amount}';
 
 export function buildSMSBody(account, reading, period, template) {
-  const g = getGallons(reading, period.normalizationFactor);
+  const g = getGallons(reading);
   const amount = account.fixedCharge != null ? account.fixedCharge
     : account.meterDefective ? calcBill(0, period.rateTableSnapshot)
     : calcBill(g ?? 0, period.rateTableSnapshot);
