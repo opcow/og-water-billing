@@ -320,6 +320,17 @@ function setupEvents() {
     }
   });
 
+  // Debug overlay for touch drag
+  const debugEl = document.createElement('div');
+  debugEl.id = 'drag-debug';
+  debugEl.style.cssText = 'position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.8);color:#0f0;font:12px monospace;padding:8px;z-index:9999;max-width:150px;word-wrap:break-word';
+  document.body.appendChild(debugEl);
+
+  function updateDebug(msg) {
+    debugEl.textContent = msg;
+    setTimeout(() => { debugEl.textContent = ''; }, 2000);
+  }
+
   periodView.addEventListener('touchend', e => {
     if (!isHorizontalDrag) return;
 
@@ -328,36 +339,36 @@ function setupEvents() {
     const didDragLeft = dx > threshold;
     const didDragRight = dx < -threshold;
 
-    console.log('touchend: dx=', dx, 'didDragLeft=', didDragLeft, 'didDragRight=', didDragRight);
+    updateDebug(`dx=${dx.toFixed(0)} left=${didDragLeft} right=${didDragRight}`);
 
     periodView.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
 
     // Determine navigation direction and perform it
     if (didDragLeft) {
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-      console.log('dragged left: idx=', idx, 'length=', state.periods.length);
       if (idx >= 0 && idx < state.periods.length - 1) {
-        console.log('calling goToNextPeriod');
+        updateDebug(`→ next (idx ${idx}/${state.periods.length})`);
         goToNextPeriod();
         requestAnimationFrame(() => {
           periodView.style.transform = 'translateX(0)';
         });
         return;
       }
+      updateDebug(`→ at end`);
     } else if (didDragRight) {
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-      console.log('dragged right: idx=', idx);
       if (idx > 0) {
-        console.log('calling goToPrevPeriod');
+        updateDebug(`← prev (idx ${idx}/${state.periods.length})`);
         goToPrevPeriod();
         requestAnimationFrame(() => {
           periodView.style.transform = 'translateX(0)';
         });
         return;
       }
+      updateDebug(`← at start`);
     }
 
-    console.log('springing back');
+    updateDebug(`↔ spring back`);
     periodView.style.transform = 'translateX(0)';
   });
 
