@@ -250,8 +250,8 @@ function setupEvents() {
     popover.hidden = false;
   });
 
-  document.getElementById('btn-period-prev').addEventListener('click', goToPrevPeriod);
-  document.getElementById('btn-period-next').addEventListener('click', goToNextPeriod);
+  // Arrow buttons get the animated stack transition (wired below, near the swipe
+  // gesture, so they share its ghost/animation helpers).
 
   document.getElementById('popover-prev-year').addEventListener('click', e => {
     e.stopPropagation();
@@ -314,7 +314,7 @@ function setupEvents() {
       if (ev.target === el && ev.propertyName === 'transform') run();
     };
     el.addEventListener('transitionend', handler);
-    setTimeout(run, 350);
+    setTimeout(run, 550);   // fallback; must exceed the longest transition (.45s)
   }
 
   periodViewport.addEventListener('touchstart', e => {
@@ -439,6 +439,60 @@ function setupEvents() {
       onceSettled(g.mover, cleanup);
     }
   });
+
+  // Same stack animation, but triggered by the arrow buttons (no touch). Builds the
+  // ghost, plays the slide from a standstill (a forced reflow makes the transition
+  // run), then swaps the live pane — identical landing to a committed swipe.
+  function animateStackTo(dir) {
+    const idx = currentIdx();
+    const neighbor = state.periods[dir === 'next' ? idx + 1 : idx - 1];
+    if (!neighbor) return;
+    if (reduceMotion.matches) {
+      if (dir === 'next') goToNextPeriod(); else goToPrevPeriod();
+      return;
+    }
+    if (gesture && gesture.animating) return;   // ignore while one is mid-flight
+    gesture = { animating: true };
+
+    const width = periodViewport.clientWidth;
+    const ghost = ui.buildGhost(neighbor, accountsFor(neighbor), state.masterMeter,
+      state.sortConfig, state.lockStartReadings, state.showMasterSection);
+    periodTrack.appendChild(ghost);
+
+    const cleanup = () => {
+      ghost.remove();
+      periodView.style.transition = '';
+      periodView.style.transform  = '';
+      periodView.style.zIndex     = '';
+      periodView.classList.remove('sheet-lift');
+      gesture = null;
+    };
+
+    if (dir === 'next') {
+      // Newer ghost slides in from the right, covering the current pane.
+      ghost.style.zIndex = '2';
+      ghost.style.transform = `translateX(${width}px)`;
+      ghost.classList.add('sheet-lift');
+      void ghost.offsetWidth;                   // commit the start state
+      ghost.style.transition = 'transform .45s ease-out';
+      ghost.style.transform = 'translateX(0)';
+      onceSettled(ghost, () => { goToNextPeriod(); cleanup(); });
+    } else {
+      // Current pane slides off to the right, revealing the older ghost beneath.
+      ghost.style.zIndex = '0';
+      ghost.style.transform = 'translateX(0)';
+      periodView.style.zIndex = '1';
+      periodView.classList.add('sheet-lift');
+      periodView.style.transition = 'none';
+      periodView.style.transform = 'translateX(0)';
+      void periodView.offsetWidth;              // commit the start state
+      periodView.style.transition = 'transform .45s ease-out';
+      periodView.style.transform = `translateX(${width}px)`;
+      onceSettled(periodView, () => { goToPrevPeriod(); cleanup(); });
+    }
+  }
+  document.getElementById('btn-period-prev').addEventListener('click', () => animateStackTo('prev'));
+  document.getElementById('btn-period-next').addEventListener('click', () => animateStackTo('next'));
 
   // Column sort — only on the main billing table, not the master meter table
   document.querySelector('#billing-table thead').addEventListener('click', e => {
