@@ -480,7 +480,7 @@ function setupEvents() {
         void ghost.offsetWidth;                 // commit the start state
         ghost.style.transition = 'transform .45s ease-out';
         ghost.style.transform = 'translateX(0)';
-        onceSettled(ghost, cleanup);
+        onceSettled(ghost, () => { goToNextPeriod(); cleanup(); });
       } else {
         // Current pane slides off to the right, revealing the older ghost beneath.
         ghost.style.zIndex = '0';
@@ -492,7 +492,7 @@ function setupEvents() {
         void periodView.offsetWidth;            // commit the start state
         periodView.style.transition = 'transform .45s ease-out';
         periodView.style.transform = `translateX(${width}px)`;
-        onceSettled(periodView, cleanup);
+        onceSettled(periodView, () => { goToPrevPeriod(); cleanup(); });
       }
     });
   }
