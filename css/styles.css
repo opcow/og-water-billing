@@ -336,6 +336,7 @@ td.col-amt {
   -webkit-user-select: none;
   user-select: none;
 }
+td.col-amt[data-account-id]:not([data-account-id="0"]) { cursor: pointer; }
 .sms-trigger { cursor: pointer; }
 .sms-trigger:hover { color: var(--blue); }
 .sms-sent { color: #15803d; }

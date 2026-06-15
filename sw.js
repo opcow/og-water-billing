@@ -1,14 +1,14 @@
-const CACHE = 'water-billing-6a6504ce';
+const CACHE = 'water-billing-60f6af23';
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './css/styles.css?v=bdfe032b',
-  './js/app.js?v=d2e16d9b',
+  './css/styles.css?v=abc7ecab',
+  './js/app.js?v=60f6af23',
   './js/billing.js?v=1ca74bc0',
   './js/db.js?v=df952e74',
-  './js/ui.js?v=c05c386d',
+  './js/ui.js?v=a8fc934b',
   './js/vendor/xlsx.full.min.js',
   './js/vendor/qrcode.min.js',
   './icons/icon.svg',

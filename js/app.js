@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=df952e74';
 import * as billing from './billing.js?v=1ca74bc0';
-import * as ui      from './ui.js?v=c05c386d';
+import * as ui      from './ui.js?v=a8fc934b';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -655,25 +655,22 @@ function setupEvents() {
     else redo();
   });
 
-  // Long-press handlers — amount cells and start reading cells
+  // Tap an amount cell to open the Send Text overlay (master meter excluded)
+  document.addEventListener('click', e => {
+    const amtCell = e.target.closest('td.col-amt[data-account-id]');
+    if (!amtCell || amtCell.textContent.trim() === '—') return;
+    const accountId = Number(amtCell.dataset.accountId);
+    if (accountId === 0) return;
+    openSmsDialog(accountId);
+  });
+
+  // Long-press handler — start reading cells
   let pressStartPos = null;
   let pressedCell = null;
   document.addEventListener('pointerdown', e => {
-    const amtCell = e.target.closest('td.col-amt[data-account-id]');
-    const nameCell = e.target.closest('td.col-name[data-account-id]');
     const startCell = e.target.closest('td.col-start');
 
-    if ((amtCell || nameCell) && e.target.textContent.trim() !== '—') {
-      const cell = amtCell || nameCell;
-      pressedCell = { type: 'amount', cell: cell, accountId: Number(cell.dataset.accountId) };
-      pressStartPos = { x: e.clientX, y: e.clientY };
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null;
-        pressStartPos = null;
-        showAmountMenu(pressedCell.cell, pressedCell.accountId);
-        pressedCell = null;
-      }, 500);
-    } else if (startCell && state.lockStartReadings) {
+    if (startCell && state.lockStartReadings) {
       pressedCell = { type: 'start', cell: startCell };
       pressStartPos = { x: e.clientX, y: e.clientY };
       longPressTimer = setTimeout(() => {
@@ -696,11 +693,9 @@ function setupEvents() {
   document.addEventListener('pointerup',     () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; pressedCell = null; });
   document.addEventListener('pointercancel', () => { clearTimeout(longPressTimer); longPressTimer = null; pressStartPos = null; pressedCell = null; });
 
-  // Dismiss menus on outside press
+  // Dismiss start menu on outside press
   document.addEventListener('pointerdown', e => {
-    const amtMenu = document.getElementById('amt-menu');
     const startMenu = document.getElementById('start-menu');
-    if (!amtMenu.hidden && !amtMenu.contains(e.target)) hideAmountMenu();
     if (!startMenu.hidden && !startMenu.contains(e.target)) startMenu.hidden = true;
   }, { capture: true });
 
@@ -709,50 +704,22 @@ function setupEvents() {
     if (e.target.closest('td.col-name[data-account-id]') || e.target.closest('td.col-amt[data-account-id]') || e.target.closest('td.col-start')) e.preventDefault();
   });
 
-  // Reposition menus when soft keyboard appears / disappears
+  // Reposition start menu when soft keyboard appears / disappears
   window.visualViewport?.addEventListener('resize', () => {
-    const amtMenu = document.getElementById('amt-menu');
     const startMenu = document.getElementById('start-menu');
-    if (!amtMenu.hidden) repositionMenu(amtMenu);
     if (!startMenu.hidden) repositionMenu(startMenu);
   });
 
-  // Amount menu buttons
-  document.getElementById('amt-menu-copy').addEventListener('click', () => {
-    const menu      = document.getElementById('amt-menu');
-    const accountId = Number(menu.dataset.accountId);
-    const period    = state.currentPeriod;
-    if (!period) return;
-
-    const account = accountId === 0 ? state.masterMeter : accountsFor(period).find(a => a.id === accountId);
-    const reading = accountId === 0 ? period.masterReading : period.readings.find(r => r.accountId === accountId);
-
-    if (account && reading) {
-      const text = billing.buildSMSBody(account, reading, period, state.smsTemplate);
-      navigator.clipboard?.writeText(text);
-    }
-    hideAmountMenu();
-  });
-  document.getElementById('amt-menu-sms').addEventListener('click', () => {
-    const menu      = document.getElementById('amt-menu');
-    const accountId = Number(menu.dataset.accountId);
+  // Send text dialog buttons
+  document.getElementById('btn-send-sms').addEventListener('click', async () => {
+    const dialog    = document.getElementById('sms-dialog');
+    const accountId = Number(dialog.dataset.accountId);
     const account   = menuAccount(accountId);
-    const phoneRow  = document.getElementById('amt-menu-phone-row');
-    const phoneInput = document.getElementById('amt-menu-phone');
-    const sendBtn   = document.getElementById('amt-menu-save-send');
-    phoneInput.value    = account?.phone ?? '';
-    sendBtn.textContent = account?.phone ? 'Send' : 'Save & Send';
-    phoneRow.style.display = 'flex';
-    repositionMenu(menu);
-    phoneInput.focus();
-  });
-  document.getElementById('amt-menu-save-send').addEventListener('click', async () => {
-    const menu      = document.getElementById('amt-menu');
-    const accountId = Number(menu.dataset.accountId);
-    const phone     = document.getElementById('amt-menu-phone').value.trim();
-    if (!phone) return;
-    const account = menuAccount(accountId);
-    if (account) {
+    if (!account) { dialog.close(); return; }
+
+    if (!account.phone) {
+      const phone = document.getElementById('sms-phone').value.trim();
+      if (!phone) return;
       account.phone = phone;
       if (accountId === 0) {
         await db.setConfig('masterMeter', state.masterMeter);
@@ -764,8 +731,13 @@ function setupEvents() {
       const amtEl = document.getElementById(`amt-${accountId}`);
       if (amtEl) amtEl.classList.add('sms-trigger');
     }
-    hideAmountMenu();
+    dialog.close();
     handleTextClick(accountId);
+  });
+  document.getElementById('btn-cancel-sms').addEventListener('click', () => document.getElementById('sms-dialog').close());
+  document.getElementById('close-sms-dialog').addEventListener('click', () => document.getElementById('sms-dialog').close());
+  document.getElementById('sms-dialog').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.target.close();
   });
 
   // Start readings menu unlock button
@@ -1159,23 +1131,36 @@ function repositionMenu(menu) {
   menu.style.left = left + 'px';
 }
 
-function showAmountMenu(cell, accountId) {
-  const menu    = document.getElementById('amt-menu');
+function openSmsDialog(accountId) {
+  const period = state.currentPeriod;
+  if (!period) return;
+
   const account = menuAccount(accountId);
+  if (!account) return;
 
-  menu.dataset.accountId    = accountId;
+  let reading;
+  if (accountId === 0) {
+    reading = period.masterReading;
+  } else {
+    reading = period.readings.find(r => r.accountId === accountId)
+      || { accountId, startReading: null, endReading: null, endReadingAt: null };
+  }
 
-  const rect = cell.getBoundingClientRect();
-  menu.dataset.anchorTop    = rect.top;
-  menu.dataset.anchorBottom = rect.bottom;
-  menu.dataset.anchorLeft   = rect.left;
+  const dialog = document.getElementById('sms-dialog');
+  dialog.dataset.accountId = accountId;
+  document.getElementById('sms-dialog-preview').textContent = billing.buildSMSBody(account, reading, period, state.smsTemplate);
 
-  document.getElementById('amt-menu-phone-row').style.display = 'none';
-  document.getElementById('amt-menu-phone').value = '';
-  document.getElementById('amt-menu-sms').textContent = account?.phone ? 'Send Text' : 'Send Text…';
+  const phoneRow   = document.getElementById('sms-phone-row');
+  const phoneInput = document.getElementById('sms-phone');
+  if (account.phone) {
+    phoneRow.style.display = 'none';
+  } else {
+    phoneInput.value = '';
+    phoneRow.style.display = '';
+  }
 
-  menu.hidden = false;
-  repositionMenu(menu);
+  dialog.showModal();
+  if (!account.phone) phoneInput.focus();
 }
 
 function showStartMenu(cell) {
@@ -1186,10 +1171,6 @@ function showStartMenu(cell) {
   menu.dataset.anchorLeft   = rect.left;
   menu.hidden = false;
   repositionMenu(menu);
-}
-
-function hideAmountMenu() {
-  document.getElementById('amt-menu').hidden = true;
 }
 
 function handleTextClick(accountId) {
@@ -1252,18 +1233,16 @@ function closeSettings() {
 async function saveSettings() {
   const result = ui.collectSettings();
   if (!result) return;
-  const { rateTable, accounts, masterMeter, smsTemplate } = result;
+  const { rateTable, accounts, smsTemplate } = result;
 
   await Promise.all([
     db.setConfig('rateTable', rateTable),
     db.setConfig('smsTemplate', smsTemplate),
-    db.setConfig('masterMeter', masterMeter),
     db.replaceAllAccounts(accounts),
   ]);
   state.smsTemplate = smsTemplate;
   state.maxSheets = result.maxSheets;
   state.showMasterSection = result.showMasterSection;
-  state.masterMeter = masterMeter;
   await db.setConfig('maxSheets', result.maxSheets);
   await db.setConfig('showMasterSection', result.showMasterSection);
   await setLocalDirty(true);

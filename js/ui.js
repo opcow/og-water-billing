@@ -160,7 +160,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
   const amount = accountAmount(account, g, period);
   const startV = reading?.startReading ?? '';
   const endV   = reading?.endReading ?? '';
-  const amtClass = `num col-amt${account.phone ? ' sms-trigger' : ''}${reading?.smsSentAt ? ' sms-sent' : ''}`;
+  const amtClass = `num col-amt${account.phone && account.id !== 0 ? ' sms-trigger' : ''}${reading?.smsSentAt ? ' sms-sent' : ''}`;
   const amtData  = ` data-account-id="${account.id}"`;
 
   const defClass = account.meterDefective ? ' col-defective' : '';
@@ -271,7 +271,7 @@ export function renderSettings(rateTable, accounts, masterMeter, hasPeriod, file
   document.getElementById('show-master-section').checked = !!showMasterSection;
 
   renderRateTiers(rateTable);
-  renderAccountsEditor(accounts, masterMeter);
+  renderAccountsEditor(accounts);
   renderDataTab(hasPeriod, fileHandle, githubConfig, maxSheets);
   renderMessagesTab(smsTemplate, hasPeriod);
   switchTab('accounts');
@@ -515,32 +515,25 @@ export function addRateTierRow() {
   updateTierLabels();
 }
 
-function renderAccountsEditor(accounts, masterMeter) {
+function renderAccountsEditor(accounts) {
   const container = document.getElementById('accounts-editor');
   container.innerHTML = `
     <div class="acc-header">
       <span></span>
       <span>Unit / Name</span><span>Account Holder</span><span></span>
     </div>
-    ${accounts.map(a => accountRowHTML(a)).join('')}
-    <div style="margin-top:20px;padding-top:20px">
-      <div class="acc-header">
-        <span></span>
-        <span style="font-weight:bold">Master Meter</span><span></span><span></span>
-      </div>
-      ${accountRowHTML(masterMeter, true)}
-    </div>`;
+    ${accounts.map(a => accountRowHTML(a)).join('')}`;
   initDragSort(container);
 }
 
-function accountRowHTML(a, isMaster) {
+function accountRowHTML(a) {
   return `
-    <div class="account-row" data-id="${a.id ?? ''}"${isMaster ? ' data-master="true"' : ''}>
+    <div class="account-row" data-id="${a.id ?? ''}">
       <div class="acc-primary">
-        <span class="drag-handle"${isMaster ? ' style="visibility:hidden"' : ' draggable="true" title="Drag to reorder"'}></span>
+        <span class="drag-handle" draggable="true" title="Drag to reorder"></span>
         <input type="text"  class="acc-name"   value="${esc(a.name)}"            placeholder="Unit / account name">
         <input type="text"  class="acc-holder" value="${esc(a.accountHolder ?? '')}" placeholder="Account holder name">
-        <button class="btn btn-danger btn-sm remove-account"${isMaster ? ' style="visibility:hidden"' : ''} style="padding:3px 8px;font-size:12px">×</button>
+        <button class="btn btn-danger btn-sm remove-account" style="padding:3px 8px;font-size:12px">×</button>
       </div>
       <div class="acc-secondary">
         <input type="tel" class="acc-phone" value="${esc(a.phone ?? '')}" placeholder="Phone (optional)" style="width:130px">
@@ -664,9 +657,7 @@ export function collectSettings() {
   }
 
   const accountRows = document.querySelectorAll('#accounts-editor .account-row');
-  let masterMeter = null;
   const accounts = Array.from(accountRows).map((row, i) => {
-    const isMaster = row.dataset.master === 'true';
     const idVal = row.dataset.id;
     const acc = {
       name:          row.querySelector('.acc-name')?.value.trim()   || '',
@@ -677,15 +668,11 @@ export function collectSettings() {
       sortOrder:     i,
     };
     if (idVal) acc.id = Number(idVal);
-    if (isMaster) {
-      masterMeter = { id: 0, ...acc };
-      return null;
-    }
     return acc;
   }).filter(a => a && a.name);
 
   const showMasterSection  = document.getElementById('show-master-section')?.checked ?? true;
   const smsTemplate = document.getElementById('sms-template')?.value.trim() || null;
   const maxSheets = Math.min(120, Math.max(3, parseInt(document.getElementById('max-sheets')?.value, 10) || 12));
-  return { rateTable, accounts, masterMeter, showMasterSection, smsTemplate, maxSheets };
+  return { rateTable, accounts, showMasterSection, smsTemplate, maxSheets };
 }

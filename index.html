@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=bdfe032b">
+  <link rel="stylesheet" href="css/styles.css?v=abc7ecab">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -227,15 +227,25 @@
     </div>
   </dialog>
 
-  <!-- Amount cell context menu -->
-  <div id="amt-menu" class="amt-context-menu" hidden>
-    <button id="amt-menu-copy"  class="amt-menu-btn">Copy</button>
-    <button id="amt-menu-sms"   class="amt-menu-btn">Send Text</button>
-    <div id="amt-menu-phone-row" style="display:none;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
-      <input id="amt-menu-phone" type="tel" placeholder="Phone number" style="flex:1;min-width:0;font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)">
-      <button id="amt-menu-save-send" class="btn btn-primary" style="font-size:13px;padding:5px 10px">Send</button>
+  <!-- ── Send text dialog ──────────────────────────────────────────────────── -->
+  <dialog id="sms-dialog" class="period-dialog">
+    <div class="dialog-header">
+      <h2>Send Text</h2>
+      <button id="close-sms-dialog" class="btn btn-icon" aria-label="Close">×</button>
     </div>
-  </div>
+    <div class="dialog-body">
+      <pre id="sms-dialog-preview" style="white-space:pre-wrap;font:inherit;margin:0 0 12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)"></pre>
+      <div id="sms-phone-row" class="form-row" style="display:none">
+        <label>Phone number
+          <input type="tel" id="sms-phone" inputmode="tel" placeholder="Phone number">
+        </label>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button id="btn-cancel-sms" class="btn btn-secondary">Cancel</button>
+      <button id="btn-send-sms"   class="btn btn-primary">Send</button>
+    </div>
+  </dialog>
 
   <div id="start-menu" class="amt-context-menu" hidden>
     <button id="start-menu-unlock" class="amt-menu-btn">Unlock Start Readings</button>
@@ -259,6 +269,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=d2e16d9b"></script>
+  <script type="module" src="js/app.js?v=60f6af23"></script>
 </body>
 </html>
