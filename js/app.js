@@ -711,7 +711,7 @@ function setupEvents() {
   });
 
   // Send text dialog buttons
-  document.getElementById('btn-send-sms').addEventListener('click', async () => {
+  document.getElementById('btn-send-sms').addEventListener('click', () => {
     const dialog    = document.getElementById('sms-dialog');
     const accountId = Number(dialog.dataset.accountId);
     const account   = menuAccount(accountId);
@@ -721,10 +721,12 @@ function setupEvents() {
       const phone = document.getElementById('sms-phone').value.trim();
       if (!phone) return;
       account.phone = phone;
+      // Persist without awaiting so the sms: navigation below stays inside the
+      // user gesture — iOS blocks external-scheme navigation after an await.
       if (accountId === 0) {
-        await db.setConfig('masterMeter', state.masterMeter);
+        db.setConfig('masterMeter', state.masterMeter);
       } else {
-        await db.saveAccount(account);
+        db.saveAccount(account);
         const snap = state.currentPeriod?.accountsSnapshot?.find(a => a.id === accountId);
         if (snap) snap.phone = phone;
       }
@@ -1205,7 +1207,12 @@ function handleTextClick(accountId) {
   const amtEl = document.getElementById(`amt-${accountId}`);
   if (amtEl) amtEl.classList.add('sms-sent');
 
-  window.location.href = `sms:${account.phone}?body=${body}`;
+  // iOS expects `&body=` as the separator; Android/others use `?body=`.
+  const ua = navigator.userAgent || '';
+  const isIOS = /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const sep = isIOS ? '&' : '?';
+  const num = account.phone.replace(/[^\d+]/g, '');
+  window.location.href = `sms:${num}${sep}body=${body}`;
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
