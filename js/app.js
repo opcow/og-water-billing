@@ -443,53 +443,58 @@ function setupEvents() {
   // Same stack animation, but triggered by the arrow buttons (no touch). Builds the
   // ghost, plays the slide from a standstill (a forced reflow makes the transition
   // run), then swaps the live pane — identical landing to a committed swipe.
+  // Returns a Promise that resolves when the animation completes.
   function animateStackTo(dir) {
-    const idx = currentIdx();
-    const neighbor = state.periods[dir === 'next' ? idx + 1 : idx - 1];
-    if (!neighbor) return;
-    if (reduceMotion.matches) {
-      if (dir === 'next') goToNextPeriod(); else goToPrevPeriod();
-      return;
-    }
-    if (gesture && gesture.animating) return;   // ignore while one is mid-flight
-    gesture = { animating: true };
+    return new Promise(resolve => {
+      const idx = currentIdx();
+      const neighbor = state.periods[dir === 'next' ? idx + 1 : idx - 1];
+      if (!neighbor) { resolve(); return; }
+      if (reduceMotion.matches) {
+        if (dir === 'next') goToNextPeriod(); else goToPrevPeriod();
+        resolve();
+        return;
+      }
+      if (gesture && gesture.animating) { resolve(); return; }
+      gesture = { animating: true };
 
-    const width = periodViewport.clientWidth;
-    const ghost = ui.buildGhost(neighbor, accountsFor(neighbor), state.masterMeter,
-      state.sortConfig, state.lockStartReadings, state.showMasterSection);
-    periodTrack.appendChild(ghost);
+      const width = periodViewport.clientWidth;
+      const ghost = ui.buildGhost(neighbor, accountsFor(neighbor), state.masterMeter,
+        state.sortConfig, state.lockStartReadings, state.showMasterSection);
+      periodTrack.appendChild(ghost);
 
-    const cleanup = () => {
-      ghost.remove();
-      periodView.style.transition = '';
-      periodView.style.transform  = '';
-      periodView.style.zIndex     = '';
-      periodView.classList.remove('sheet-lift');
-      gesture = null;
-    };
+      const cleanup = () => {
+        ghost.remove();
+        periodView.style.transition = '';
+        periodView.style.transform  = '';
+        periodView.style.zIndex     = '';
+        periodView.classList.remove('sheet-lift');
+        gesture = null;
+        resolve();
+      };
 
-    if (dir === 'next') {
-      // Newer ghost slides in from the right, covering the current pane.
-      ghost.style.zIndex = '2';
-      ghost.style.transform = `translateX(${width}px)`;
-      ghost.classList.add('sheet-lift');
-      void ghost.offsetWidth;                   // commit the start state
-      ghost.style.transition = 'transform .45s ease-out';
-      ghost.style.transform = 'translateX(0)';
-      onceSettled(ghost, () => { goToNextPeriod(); cleanup(); });
-    } else {
-      // Current pane slides off to the right, revealing the older ghost beneath.
-      ghost.style.zIndex = '0';
-      ghost.style.transform = 'translateX(0)';
-      periodView.style.zIndex = '1';
-      periodView.classList.add('sheet-lift');
-      periodView.style.transition = 'none';
-      periodView.style.transform = 'translateX(0)';
-      void periodView.offsetWidth;              // commit the start state
-      periodView.style.transition = 'transform .45s ease-out';
-      periodView.style.transform = `translateX(${width}px)`;
-      onceSettled(periodView, () => { goToPrevPeriod(); cleanup(); });
-    }
+      if (dir === 'next') {
+        // Newer ghost slides in from the right, covering the current pane.
+        ghost.style.zIndex = '2';
+        ghost.style.transform = `translateX(${width}px)`;
+        ghost.classList.add('sheet-lift');
+        void ghost.offsetWidth;                 // commit the start state
+        ghost.style.transition = 'transform .45s ease-out';
+        ghost.style.transform = 'translateX(0)';
+        onceSettled(ghost, cleanup);
+      } else {
+        // Current pane slides off to the right, revealing the older ghost beneath.
+        ghost.style.zIndex = '0';
+        ghost.style.transform = 'translateX(0)';
+        periodView.style.zIndex = '1';
+        periodView.classList.add('sheet-lift');
+        periodView.style.transition = 'none';
+        periodView.style.transform = 'translateX(0)';
+        void periodView.offsetWidth;            // commit the start state
+        periodView.style.transition = 'transform .45s ease-out';
+        periodView.style.transform = `translateX(${width}px)`;
+        onceSettled(periodView, cleanup);
+      }
+    });
   }
   document.getElementById('btn-period-prev').addEventListener('click', () => animateStackTo('prev'));
   document.getElementById('btn-period-next').addEventListener('click', () => animateStackTo('next'));
@@ -977,6 +982,7 @@ async function confirmPeriod() {
 
   const [y, m, d] = endStr.split('-').map(Number);
   const name = billing.monthLabel(new Date(y, m - 1, d));
+  const oldCurrentIdx = currentIdx();    // capture index before new period is added
   let period;
 
   if (_periodIsFirst) {
@@ -1022,7 +1028,19 @@ async function confirmPeriod() {
     updateLockReadingsButton();
   }
   closePeriodDialog();
-  render();
+  // Animate to the new sheet. If we're not already on the latest, animate through
+  // all the sheets in between one by one (so you see the flipbook effect).
+  if (_periodIsFirst) {
+    render();
+  } else {
+    const targetIdx = state.periods.length - 1;  // new period index
+    state.currentPeriodId = state.periods[oldCurrentIdx].id;
+    render();
+    // Chain forward animations from old to new, one step at a time
+    for (let i = oldCurrentIdx; i < targetIdx; i++) {
+      await animateStackTo('next');
+    }
+  }
   await trimOldPeriods();
   syncToFile();
 }
