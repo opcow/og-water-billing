@@ -324,29 +324,31 @@ function setupEvents() {
     if (!isHorizontalDrag) return;
 
     const dx = touchStartX - e.changedTouches[0].clientX;
-    const threshold = 80; // pixels to trigger a nav
-    const isNext = dx > threshold;
-    const isPrev = dx < -threshold;
+    const threshold = 50; // pixels to trigger a nav (lower for mobile)
+    const didDragLeft = dx > threshold;
+    const didDragRight = dx < -threshold;
 
     periodView.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
 
-    if (isNext) {
+    // Determine navigation direction and perform it
+    let shouldNavigate = false;
+    if (didDragLeft) {
+      // Dragged left → show next sheet
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-      if (idx < state.periods.length - 1) {
+      if (idx >= 0 && idx < state.periods.length - 1) {
         goToNextPeriod();
-        periodView.style.transform = 'translateX(0)';
-        return;
+        shouldNavigate = true;
       }
-    } else if (isPrev) {
+    } else if (didDragRight) {
+      // Dragged right → show prev sheet
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
       if (idx > 0) {
         goToPrevPeriod();
-        periodView.style.transform = 'translateX(0)';
-        return;
+        shouldNavigate = true;
       }
     }
 
-    // Spring back — didn't drag far enough to switch
+    // Always reset to 0; animate back if no nav, or snap to 0 after nav
     periodView.style.transform = 'translateX(0)';
   });
 
