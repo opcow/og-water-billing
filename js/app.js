@@ -341,36 +341,37 @@ function setupEvents() {
 
     updateDebug(`dx=${dx.toFixed(0)} left=${didDragLeft} right=${didDragRight}`);
 
-    periodView.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
-
     // Determine navigation direction and perform it
     if (didDragLeft) {
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
       if (idx >= 0 && idx < state.periods.length - 1) {
-        updateDebug(`→ next (idx ${idx}/${state.periods.length})`);
+        updateDebug(`→ next`);
         goToNextPeriod();
-        // Reset transform immediately (no animation) so new sheet appears in place
-        periodView.style.transition = 'none';
+        // Reset with smooth animation after nav
+        periodView.style.transition = 'transform 0.2s ease-out';
         periodView.style.transform = 'translateX(0)';
-        return;
+      } else {
+        updateDebug(`→ at end`);
+        periodView.style.transition = 'transform 0.2s ease-out';
+        periodView.style.transform = 'translateX(0)';
       }
-      updateDebug(`→ at end`);
     } else if (didDragRight) {
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
       if (idx > 0) {
-        updateDebug(`← prev (idx ${idx}/${state.periods.length})`);
+        updateDebug(`← prev`);
         goToPrevPeriod();
-        // Reset transform immediately (no animation) so new sheet appears in place
-        periodView.style.transition = 'none';
+        periodView.style.transition = 'transform 0.2s ease-out';
         periodView.style.transform = 'translateX(0)';
-        return;
+      } else {
+        updateDebug(`← at start`);
+        periodView.style.transition = 'transform 0.2s ease-out';
+        periodView.style.transform = 'translateX(0)';
       }
-      updateDebug(`← at start`);
+    } else {
+      updateDebug(`↔ short drag`);
+      periodView.style.transition = 'transform 0.2s ease-out';
+      periodView.style.transform = 'translateX(0)';
     }
-
-    // Spring back with animation — didn't drag far enough
-    updateDebug(`↔ spring back`);
-    periodView.style.transform = 'translateX(0)';
   });
 
   // Column sort — only on the main billing table, not the master meter table
