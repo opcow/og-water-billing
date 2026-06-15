@@ -349,9 +349,9 @@ function setupEvents() {
       if (idx >= 0 && idx < state.periods.length - 1) {
         updateDebug(`→ next (idx ${idx}/${state.periods.length})`);
         goToNextPeriod();
-        requestAnimationFrame(() => {
-          periodView.style.transform = 'translateX(0)';
-        });
+        // Reset transform immediately (no animation) so new sheet appears in place
+        periodView.style.transition = 'none';
+        periodView.style.transform = 'translateX(0)';
         return;
       }
       updateDebug(`→ at end`);
@@ -360,14 +360,15 @@ function setupEvents() {
       if (idx > 0) {
         updateDebug(`← prev (idx ${idx}/${state.periods.length})`);
         goToPrevPeriod();
-        requestAnimationFrame(() => {
-          periodView.style.transform = 'translateX(0)';
-        });
+        // Reset transform immediately (no animation) so new sheet appears in place
+        periodView.style.transition = 'none';
+        periodView.style.transform = 'translateX(0)';
         return;
       }
       updateDebug(`← at start`);
     }
 
+    // Spring back with animation — didn't drag far enough
     updateDebug(`↔ spring back`);
     periodView.style.transform = 'translateX(0)';
   });
