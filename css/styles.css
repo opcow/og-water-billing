@@ -194,7 +194,7 @@ body {
   padding: 24px 20px;
   max-width: 640px;
   margin: 0 auto;
-  overflow-x: hidden; /* contain the sheet-change slide so it can't flash a scrollbar */
+  overflow-x: hidden; /* contain the dragged sheet so the gesture doesn't create a horizontal scrollbar */
 }
 
 /* ── Period dates ────────────────────────────────────────────────────────── */

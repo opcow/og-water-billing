@@ -218,20 +218,6 @@ function showSyncLinkFallback(syncUrl) {
   document.execCommand('copy');
 }
 
-// Directional slide+fade so a sheet change is perceptible (consecutive sheets
-// look nearly identical). 'next' enters from the right, 'prev' from the left.
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-
-function animatePeriodChange(dir) {
-  if (prefersReducedMotion.matches) return;
-  const from = dir === 'next' ? '24px' : '-24px';
-  document.getElementById('period-view').animate(
-    [{ opacity: 0, transform: `translateX(${from})` },
-     { opacity: 1, transform: 'none' }],
-    { duration: 200, easing: 'ease-out' }
-  );
-}
-
 function goToPrevPeriod() {
   const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
   if (idx <= 0) return;
@@ -240,7 +226,6 @@ function goToPrevPeriod() {
   ui.renderPeriodPicker(state.periods, state.currentPeriodId);
   ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updatePeriodNavButtons();
-  animatePeriodChange('prev');
 }
 
 function goToNextPeriod() {
@@ -251,7 +236,6 @@ function goToNextPeriod() {
   ui.renderPeriodPicker(state.periods, state.currentPeriodId);
   ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updatePeriodNavButtons();
-  animatePeriodChange('next');
 }
 
 function setupEvents() {
@@ -303,20 +287,67 @@ function setupEvents() {
     if (!popover.contains(e.target)) popover.hidden = true;
   });
 
-  // Swipe to navigate periods — require a mostly-horizontal gesture so
-  // scrolling the table doesn't switch sheets
-  let swipeStartX = 0, swipeStartY = 0;
-  document.getElementById('period-view').addEventListener('touchstart', e => {
-    swipeStartX = e.touches[0].clientX;
-    swipeStartY = e.touches[0].clientY;
+  // Interactive sheet drag: finger follows the view, snaps on release.
+  // Prevents vertical scroll during horizontal drag.
+  let touchStartX = 0, touchStartY = 0, isHorizontalDrag = false;
+  const periodView = document.getElementById('period-view');
+
+  periodView.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    isHorizontalDrag = false;
+    periodView.style.transition = 'none';
   });
-  document.getElementById('period-view').addEventListener('touchend', e => {
-    const dx = swipeStartX - e.changedTouches[0].clientX;
-    const dy = swipeStartY - e.changedTouches[0].clientY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > 2 * Math.abs(dy)) {
-      if (dx > 0) goToNextPeriod();
-      else goToPrevPeriod();
+
+  periodView.addEventListener('touchmove', e => {
+    const dx = touchStartX - e.touches[0].clientX;
+    const dy = touchStartY - e.touches[0].clientY;
+
+    // Detect horizontal drag; once committed, suppress vertical scroll
+    if (!isHorizontalDrag) {
+      if (Math.abs(dx) > 8) {
+        isHorizontalDrag = true;
+        e.preventDefault();
+      } else if (Math.abs(dy) > 8) {
+        // Vertical drag — let it scroll normally
+        return;
+      }
     }
+
+    if (isHorizontalDrag) {
+      e.preventDefault();
+      periodView.style.transform = `translateX(${-dx}px)`;
+    }
+  });
+
+  periodView.addEventListener('touchend', e => {
+    if (!isHorizontalDrag) return;
+
+    const dx = touchStartX - e.changedTouches[0].clientX;
+    const threshold = 80; // pixels to trigger a nav
+    const isNext = dx > threshold;
+    const isPrev = dx < -threshold;
+
+    periodView.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+
+    if (isNext) {
+      const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+      if (idx < state.periods.length - 1) {
+        goToNextPeriod();
+        periodView.style.transform = 'translateX(0)';
+        return;
+      }
+    } else if (isPrev) {
+      const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+      if (idx > 0) {
+        goToPrevPeriod();
+        periodView.style.transform = 'translateX(0)';
+        return;
+      }
+    }
+
+    // Spring back — didn't drag far enough to switch
+    periodView.style.transform = 'translateX(0)';
   });
 
   // Column sort — only on the main billing table, not the master meter table
