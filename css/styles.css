@@ -194,6 +194,7 @@ body {
   padding: 24px 20px;
   max-width: 640px;
   margin: 0 auto;
+  overflow-x: hidden; /* contain the sheet-change slide so it can't flash a scrollbar */
 }
 
 /* ── Period dates ────────────────────────────────────────────────────────── */

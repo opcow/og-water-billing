@@ -218,6 +218,20 @@ function showSyncLinkFallback(syncUrl) {
   document.execCommand('copy');
 }
 
+// Directional slide+fade so a sheet change is perceptible (consecutive sheets
+// look nearly identical). 'next' enters from the right, 'prev' from the left.
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function animatePeriodChange(dir) {
+  if (prefersReducedMotion.matches) return;
+  const from = dir === 'next' ? '24px' : '-24px';
+  document.getElementById('period-view').animate(
+    [{ opacity: 0, transform: `translateX(${from})` },
+     { opacity: 1, transform: 'none' }],
+    { duration: 200, easing: 'ease-out' }
+  );
+}
+
 function goToPrevPeriod() {
   const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
   if (idx <= 0) return;
@@ -226,6 +240,7 @@ function goToPrevPeriod() {
   ui.renderPeriodPicker(state.periods, state.currentPeriodId);
   ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updatePeriodNavButtons();
+  animatePeriodChange('prev');
 }
 
 function goToNextPeriod() {
@@ -236,6 +251,7 @@ function goToNextPeriod() {
   ui.renderPeriodPicker(state.periods, state.currentPeriodId);
   ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
   updatePeriodNavButtons();
+  animatePeriodChange('next');
 }
 
 function setupEvents() {
@@ -268,12 +284,16 @@ function setupEvents() {
   document.getElementById('popover-month-grid').addEventListener('click', e => {
     const btn = e.target.closest('.popover-month');
     if (!btn || !btn.dataset.periodId) return;
-    state.currentPeriodId = Number(btn.dataset.periodId);
+    const newId = Number(btn.dataset.periodId);
+    const oldIdx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+    const newIdx = state.periods.findIndex(p => p.id === newId);
+    state.currentPeriodId = newId;
     undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
     document.getElementById('period-popover').hidden = true;
     ui.renderPeriodPicker(state.periods, state.currentPeriodId);
     ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     updatePeriodNavButtons();
+    if (newIdx !== oldIdx) animatePeriodChange(newIdx > oldIdx ? 'next' : 'prev');
   });
 
   document.addEventListener('click', e => {
