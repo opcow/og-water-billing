@@ -1148,6 +1148,7 @@ function openSmsDialog(accountId) {
 
   const dialog = document.getElementById('sms-dialog');
   dialog.dataset.accountId = accountId;
+  document.getElementById('sms-dialog-title').textContent = `Text bill to ${account.accountHolder || account.name}`;
   document.getElementById('sms-dialog-preview').textContent = billing.buildSMSBody(account, reading, period, state.smsTemplate);
 
   const phoneRow   = document.getElementById('sms-phone-row');

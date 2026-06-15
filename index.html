@@ -87,6 +87,10 @@
         <tfoot  id="billing-foot"></tfoot>
       </table>
 
+      <p class="no-print" style="margin:10px 2px 0;font-size:13px;font-weight:700;color:var(--text)">
+        Tap an amount to preview and text that account's bill.
+      </p>
+
       <section id="master-section" class="master-section" hidden>
         <h2 class="section-title">Master Meter</h2>
         <table class="billing-table">
@@ -230,11 +234,12 @@
   <!-- ── Send text dialog ──────────────────────────────────────────────────── -->
   <dialog id="sms-dialog" class="period-dialog">
     <div class="dialog-header">
-      <h2>Send Text</h2>
+      <h2 id="sms-dialog-title">Send Text</h2>
       <button id="close-sms-dialog" class="btn btn-icon" aria-label="Close">×</button>
     </div>
     <div class="dialog-body">
-      <pre id="sms-dialog-preview" style="white-space:pre-wrap;font:inherit;margin:0 0 12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)"></pre>
+      <pre id="sms-dialog-preview" style="white-space:pre-wrap;font:inherit;margin:0 0 8px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)"></pre>
+      <p style="margin:0 0 12px;font-size:12px;color:var(--muted)">You'll be able to review and edit this message in your messaging app before sending.</p>
       <div id="sms-phone-row" class="form-row" style="display:none">
         <label>Phone number
           <input type="tel" id="sms-phone" inputmode="tel" placeholder="Phone number">
@@ -269,6 +274,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=60f6af23"></script>
+  <script type="module" src="js/app.js?v=d0a8af19"></script>
 </body>
 </html>
