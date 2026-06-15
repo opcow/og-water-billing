@@ -169,7 +169,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
   const startCell = lockStartReadings
     ? `<td class="num col-start${defClass}">${startV !== '' ? startV : '—'}</td>`
     : `<td class="num col-start${defClass}" style="padding:4px 14px">
-        <input type="number" class="reading-input start-reading-input"
+        <input type="number" inputmode="numeric" class="reading-input start-reading-input"
           data-account-id="${account.id}"
           data-field="start"
           value="${startV !== '' ? startV : ''}"
@@ -182,7 +182,7 @@ function rowHTML(account, reading, period, lockStartReadings) {
       <td class="col-name" data-account-id="${account.id}">${esc(account.name)}</td>
       ${startCell}
       <td class="num col-end${defClass}" style="padding:4px 14px">
-        <input type="number" class="reading-input"
+        <input type="number" inputmode="numeric" class="reading-input"
           data-account-id="${account.id}"
           data-field="end"
           value="${endV !== '' ? endV : ''}"
