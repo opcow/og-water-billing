@@ -1,8 +1,8 @@
 export function calcBill(gal, rateTable) {
-  const minCharge = rateTable[0][3] ?? 0;
+  const minCharge = rateTable?.[0]?.[3] ?? 0;
   let total = minCharge;
   let remaining = gal;
-  for (const [bracket, rate, unit] of rateTable) {
+  for (const [bracket, rate, unit] of rateTable || []) {
     if (bracket === '-' || remaining <= bracket) {
       total += (remaining * rate) / unit;
       break;

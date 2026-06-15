@@ -1,6 +1,6 @@
-import * as db      from './db.js?v=6';
-import * as billing from './billing.js?v=8';
-import * as ui      from './ui.js?v=22';
+import * as db      from './db.js?v=df952e74';
+import * as billing from './billing.js?v=1ca74bc0';
+import * as ui      from './ui.js?v=a81bf605';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -276,8 +276,11 @@ function setupEvents() {
     updatePeriodNavButtons();
   });
 
-  document.addEventListener('click', () => {
-    document.getElementById('period-popover').hidden = true;
+  document.addEventListener('click', e => {
+    const popover = document.getElementById('period-popover');
+    // Only close on clicks outside the popover; clicks within it (incl. empty
+    // space) shouldn't dismiss it. The toggle button handles its own state.
+    if (!popover.contains(e.target)) popover.hidden = true;
   });
 
   // Swipe to navigate periods — require a mostly-horizontal gesture so
@@ -690,6 +693,8 @@ async function trimOldPeriods() {
         // Preserve configured fields from snapshot if current ones are empty
         if (snap.phone && !current.phone) current.phone = snap.phone;
         if (snap.accountHolder && !current.accountHolder) current.accountHolder = snap.accountHolder;
+        if (snap.fixedCharge != null && current.fixedCharge == null) current.fixedCharge = snap.fixedCharge;
+        if (snap.meterDefective && !current.meterDefective) current.meterDefective = snap.meterDefective;
       } else {
         // Account exists in old period but not in current list — preserve it
         idToCurrentAccount.set(snap.id, snap);
@@ -758,7 +763,7 @@ async function handleDeletePeriod() {
 
 // ── Period creation dialog ────────────────────────────────────────────────────
 
-let _periodIsFirst = true;
+let _periodIsFirst = false;
 
 function openPeriodDialog(isFirst) {
   _periodIsFirst = isFirst;
@@ -854,7 +859,7 @@ async function handleProrate() {
     return;
   }
 
-  const billingDay = state.rateTable[0][4] ?? 3;
+  const billingDay = state.rateTable?.[0]?.[4] ?? 3;
   document.getElementById('prorate-reading-day').value = period.readingDay ?? billingDay;
   updateProrateInfo();
   document.getElementById('prorate-dialog').showModal();
@@ -1159,7 +1164,7 @@ async function exportBackupJSON() {
 }
 
 async function pickAndImportPeriod() {
-  const file = await pickFile('*/*');
+  const file = await pickFile('.json,application/json');
   if (!file) return;
   let data;
   try { data = JSON.parse(await file.text()); } catch { alert('Invalid file — could not parse JSON.'); return; }
@@ -1259,7 +1264,7 @@ async function restoreFromFile(file) {
 }
 
 async function pickAndRestoreBackup() {
-  const file = await pickFile('*/*');
+  const file = await pickFile('.json,application/json');
   if (!file) return;
   await restoreFromFile(file);
 }
@@ -1380,9 +1385,17 @@ async function pushLocal(key, sha) {
   await db.setConfig('lastGithubSync', localData.exportedAt);
 }
 
+let _syncing = false;
+
 async function githubSync(isAuto = false) {
   const cfg = state.githubConfig;
   if (!cfg?.key) return;
+
+  // Concurrency guard: the 60s interval, visibilitychange, and the manual
+  // button all reach here. Overlapping runs PUT with a stale sha and clobber
+  // each other, so skip if one is already in flight.
+  if (_syncing) return;
+  _syncing = true;
 
   const btn = document.getElementById('btn-sync');
   const origText = btn.textContent;
@@ -1413,7 +1426,9 @@ async function githubSync(isAuto = false) {
       const json = await res.json();
       const remoteSha  = json.sha;
       const remoteEtag = res.headers.get('ETag');
-      const remoteData = JSON.parse(atob(json.content.replace(/\n/g, '')));
+      // Mirror the encodeURIComponent/unescape used in pushLocal so non-ASCII
+      // data (e.g. account holder names) round-trips correctly through base64.
+      const remoteData = JSON.parse(decodeURIComponent(escape(atob(json.content.replace(/\n/g, '')))));
 
       if (remoteEtag) await db.setConfig('lastGithubEtag', remoteEtag);
       if (remoteSha) await db.setConfig('lastGithubSha', remoteSha);
@@ -1470,6 +1485,8 @@ async function githubSync(isAuto = false) {
       btn.textContent = origText;
       btn.disabled = false;
     }
+  } finally {
+    _syncing = false;
   }
 }
 

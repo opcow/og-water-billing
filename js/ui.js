@@ -1,4 +1,4 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=8';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=1ca74bc0';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -236,9 +236,9 @@ function renderTotals(period, nonMaster, readMap) {
 // ── Settings modal ────────────────────────────────────────────────────────────
 
 export function renderSettings(rateTable, accounts, masterMeter, hasPeriod, fileHandle = null, githubConfig = null, smsTemplate = null, maxSheets = 12, showMasterSection = true) {
-  const baseCharge  = rateTable[0][3] ?? 0;
-  const billingDay  = rateTable[0][4] ?? 3;
-  const dueDay      = rateTable[0][5] ?? 20;
+  const baseCharge  = rateTable?.[0]?.[3] ?? 0;
+  const billingDay  = rateTable?.[0]?.[4] ?? 3;
+  const dueDay      = rateTable?.[0]?.[5] ?? 20;
   document.getElementById('base-charge').value  = baseCharge;
   document.getElementById('billing-day').value  = billingDay;
   document.getElementById('due-day').value       = dueDay;

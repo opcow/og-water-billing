@@ -1,14 +1,14 @@
-const CACHE = 'water-billing-v98';
+const CACHE = 'water-billing-9037afac';
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './css/styles.css?v=33',
-  './js/app.js?v=96',
-  './js/billing.js?v=8',
-  './js/db.js?v=6',
-  './js/ui.js?v=22',
+  './css/styles.css?v=ee39f1f6',
+  './js/app.js?v=9a4ce8ae',
+  './js/billing.js?v=1ca74bc0',
+  './js/db.js?v=df952e74',
+  './js/ui.js?v=a81bf605',
   './js/vendor/xlsx.full.min.js',
   './js/vendor/qrcode.min.js',
   './icons/icon.svg',
@@ -36,7 +36,9 @@ self.addEventListener('activate', e => {
 // logic when offline.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  if (new URL(e.request.url).origin !== location.origin) return;
+  let url;
+  try { url = new URL(e.request.url); } catch { return; }
+  if (url.origin !== location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {
