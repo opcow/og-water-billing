@@ -324,28 +324,31 @@ function setupEvents() {
     if (!isHorizontalDrag) return;
 
     const dx = touchStartX - e.changedTouches[0].clientX;
-    const threshold = 30; // pixels to trigger a nav
+    const threshold = 30;
     const didDragLeft = dx > threshold;
     const didDragRight = dx < -threshold;
+
+    console.log('touchend: dx=', dx, 'didDragLeft=', didDragLeft, 'didDragRight=', didDragRight);
 
     periodView.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
 
     // Determine navigation direction and perform it
     if (didDragLeft) {
-      // Dragged left → show next sheet
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+      console.log('dragged left: idx=', idx, 'length=', state.periods.length);
       if (idx >= 0 && idx < state.periods.length - 1) {
+        console.log('calling goToNextPeriod');
         goToNextPeriod();
-        // Use requestAnimationFrame to ensure transform is applied after DOM update
         requestAnimationFrame(() => {
           periodView.style.transform = 'translateX(0)';
         });
         return;
       }
     } else if (didDragRight) {
-      // Dragged right → show prev sheet
       const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
+      console.log('dragged right: idx=', idx);
       if (idx > 0) {
+        console.log('calling goToPrevPeriod');
         goToPrevPeriod();
         requestAnimationFrame(() => {
           periodView.style.transform = 'translateX(0)';
@@ -354,7 +357,7 @@ function setupEvents() {
       }
     }
 
-    // Spring back — didn't drag far enough or can't navigate
+    console.log('springing back');
     periodView.style.transform = 'translateX(0)';
   });
 
