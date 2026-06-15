@@ -196,13 +196,30 @@ body {
   margin: 0 auto;
 }
 
-/* ── Period carousel ─────────────────────────────────────────────────────── */
-/* Viewport clips; track holds the live pane plus a transient ghost neighbor
-   during a swipe and is translated with the finger. */
-#period-viewport { overflow: hidden; }
-#period-track    { display: flex; will-change: transform; }
-#period-track > * { flex: 0 0 100%; width: 100%; }
-#period-track > .period-ghost { pointer-events: none; user-select: none; }
+/* ── Period stack swipe ──────────────────────────────────────────────────── */
+/* Stack-of-papers model: the later-dated sheet is the top of the stack. The live
+   pane sits in normal flow (so the viewport keeps its height); during a swipe a
+   transient ghost of the neighbor is overlaid absolutely. Exactly one sheet moves
+   per gesture — the top one — while the other holds still. */
+#period-viewport { position: relative; overflow: hidden; }
+#period-track    { position: relative; }
+#period-view     { position: relative; background: var(--bg); will-change: transform; }
+.period-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background: var(--bg);
+  pointer-events: none;
+  user-select: none;
+  will-change: transform;
+}
+/* Leading-edge shadow on whichever sheet is moving, sells the layering. Cast to
+   the left so the moving sheet's left edge reads as a lifted page over the sheet
+   beneath (true for both swipe directions). Only present during a gesture so print
+   and the static view are unaffected. */
+.sheet-lift { box-shadow: -16px 0 28px -6px rgba(0, 0, 0, .45); }
+html.dark .sheet-lift { box-shadow: -16px 0 28px -6px rgba(0, 0, 0, .7); }
 
 /* ── Period dates ────────────────────────────────────────────────────────── */
 

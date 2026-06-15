@@ -283,11 +283,14 @@ function setupEvents() {
     if (!popover.contains(e.target)) popover.hidden = true;
   });
 
-  // ── Carousel swipe between sheets ───────────────────────────────────────────
-  // The track holds the live pane plus a transient "ghost" of the neighbor during
-  // a drag. On a committed swipe the live pane is re-rendered to that neighbor and
-  // the ghost removed with transitions disabled, so it lands seamlessly with no
-  // snap-back. Only the first/last sheet rubber-bands back (the "no more" cue).
+  // ── Stack-of-papers swipe between sheets ────────────────────────────────────
+  // The later-dated sheet is always the top of the stack, and exactly one sheet
+  // moves per gesture: that top sheet. Swiping right (→ older) slides the current
+  // pane off to the right, revealing the older ghost held still underneath. Swiping
+  // left (→ newer) slides the newer ghost in from the right, covering the current
+  // pane which stays put. On a committed swipe the live pane is re-rendered to that
+  // neighbor and the ghost removed with transitions disabled, so it lands seamlessly
+  // with no snap-back. Only the first/last sheet rubber-bands (the "no more" cue).
   const periodViewport = document.getElementById('period-viewport');
   const periodTrack    = document.getElementById('period-track');
   const periodView     = document.getElementById('period-view');
@@ -297,20 +300,20 @@ function setupEvents() {
 
   const currentIdx = () => state.periods.findIndex(p => p.id === state.currentPeriodId);
 
-  // Run cb once on the track's transform transition end, with a timeout fallback
-  // in case transitionend doesn't fire (e.g. value didn't actually change).
-  function onceSettled(cb) {
+  // Run cb once on el's transform transition end, with a timeout fallback in case
+  // transitionend doesn't fire (e.g. the value didn't actually change).
+  function onceSettled(el, cb) {
     let done = false;
     const run = () => {
       if (done) return;
       done = true;
-      periodTrack.removeEventListener('transitionend', handler);
+      el.removeEventListener('transitionend', handler);
       cb();
     };
     const handler = ev => {
-      if (ev.target === periodTrack && ev.propertyName === 'transform') run();
+      if (ev.target === el && ev.propertyName === 'transform') run();
     };
-    periodTrack.addEventListener('transitionend', handler);
+    el.addEventListener('transitionend', handler);
     setTimeout(run, 350);
   }
 
@@ -322,12 +325,11 @@ function setupEvents() {
       horizontal: false,
       dir: null,           // 'next' | 'prev'
       ghost: null,
-      baseline: 0,         // px transform that shows the live pane
+      mover: null,         // element that translates this gesture
       atEdge: false,
       animating: false,
       width: periodViewport.clientWidth,
     };
-    periodTrack.style.transition = 'none';
   });
 
   periodViewport.addEventListener('touchmove', e => {
@@ -339,36 +341,52 @@ function setupEvents() {
     if (!g.horizontal) {
       if (Math.abs(dx) > 8) {
         g.horizontal = true;
-        // Decide direction and prepare the incoming neighbor once.
+        // Decide direction and prepare the neighbor + mover once.
         const idx = currentIdx();
         g.dir = dx > 0 ? 'next' : 'prev';
         const neighbor = state.periods[g.dir === 'next' ? idx + 1 : idx - 1];
         if (neighbor && !reduceMotion.matches) {
           g.ghost = ui.buildGhost(neighbor, accountsFor(neighbor), state.masterMeter,
             state.sortConfig, state.lockStartReadings, state.showMasterSection);
+          periodTrack.appendChild(g.ghost);
           if (g.dir === 'next') {
-            periodTrack.appendChild(g.ghost);          // neighbor on the right
-            g.baseline = 0;
+            // Newer ghost is the top sheet: it slides in from the right over the
+            // (stationary) current pane.
+            g.ghost.style.zIndex = '2';
+            g.ghost.style.transform = `translateX(${g.width}px)`;
+            g.ghost.classList.add('sheet-lift');
+            g.mover = g.ghost;
           } else {
-            periodTrack.insertBefore(g.ghost, periodView); // neighbor on the left
-            g.baseline = -g.width;
-            periodTrack.style.transform = `translateX(${g.baseline}px)`;
+            // Older ghost sits underneath, revealed; the current pane is the top
+            // sheet and slides off to the right.
+            g.ghost.style.zIndex = '0';
+            g.ghost.style.transform = 'translateX(0)';
+            periodView.style.zIndex = '1';
+            periodView.classList.add('sheet-lift');
+            g.mover = periodView;
           }
+          g.mover.style.transition = 'none';
         } else {
-          g.atEdge = !neighbor; // first/last sheet → rubber-band
+          g.atEdge = !neighbor;     // first/last sheet → rubber-band the live pane
+          g.mover = periodView;
+          g.mover.style.transition = 'none';
+          if (g.atEdge) periodView.classList.add('sheet-lift');
         }
       } else if (Math.abs(dy) > 8) {
-        gesture = null;         // vertical scroll — abandon the gesture
+        gesture = null;             // vertical scroll — abandon the gesture
         return;
       } else {
-        return;                 // direction not yet decided
+        return;                     // direction not yet decided
       }
     }
 
-    e.preventDefault();         // committed horizontal — block vertical scroll
+    e.preventDefault();             // committed horizontal — block vertical scroll
     if (reduceMotion.matches) return;
-    const move = g.atEdge ? -dx * 0.35 : g.baseline - dx;
-    periodTrack.style.transform = `translateX(${move}px)`;
+    let move;
+    if (g.atEdge)               move = -dx * 0.35;                 // damped bounce
+    else if (g.dir === 'next')  move = Math.max(0, g.width - dx);  // ghost slides in
+    else                        move = Math.max(0, -dx);           // pane slides off
+    g.mover.style.transform = `translateX(${move}px)`;
   }, { passive: false });
 
   periodViewport.addEventListener('touchend', e => {
@@ -389,30 +407,36 @@ function setupEvents() {
       return;
     }
 
-    periodTrack.style.transition = 'transform .25s ease-out';
+    // Restore the live pane to a clean state after a gesture finishes.
+    const cleanup = () => {
+      if (g.ghost) g.ghost.remove();
+      periodView.style.transition = '';
+      periodView.style.transform  = '';
+      periodView.style.zIndex     = '';
+      periodView.classList.remove('sheet-lift');
+      gesture = null;
+    };
+
+    g.mover.style.transition = 'transform .25s ease-out';
 
     if (g.ghost && Math.abs(dx) > threshold) {
-      // Committed: finish sliding the ghost to center, then swap the live pane to
-      // that sheet and drop the ghost with transitions off — seamless landing.
+      // Committed: finish the slide, then swap the live pane to that sheet and drop
+      // the ghost — seamless landing, no snap-back.
       g.animating = true;
-      periodTrack.style.transform = `translateX(${g.dir === 'next' ? -g.width : 0}px)`;
-      onceSettled(() => {
-        if (g.dir === 'next') goToNextPeriod(); else goToPrevPeriod();
-        g.ghost.remove();
-        periodTrack.style.transition = 'none';
-        periodTrack.style.transform = '';
-        gesture = null;
-      });
+      if (g.dir === 'next') {
+        g.ghost.style.transform = 'translateX(0)';
+        onceSettled(g.ghost, () => { goToNextPeriod(); cleanup(); });
+      } else {
+        periodView.style.transform = `translateX(${g.width}px)`;
+        onceSettled(periodView, () => { goToPrevPeriod(); cleanup(); });
+      }
     } else {
-      // Spring back to the live pane.
+      // Spring the moving sheet back to rest (also the at-edge rubber-band).
       g.animating = true;
-      periodTrack.style.transform = `translateX(${g.baseline}px)`;
-      onceSettled(() => {
-        if (g.ghost) g.ghost.remove();
-        periodTrack.style.transition = 'none';
-        periodTrack.style.transform = '';
-        gesture = null;
-      });
+      g.mover.style.transform = g.dir === 'next' && g.ghost
+        ? `translateX(${g.width}px)`   // newer ghost retreats off the right
+        : 'translateX(0)';             // current pane settles back
+      onceSettled(g.mover, cleanup);
     }
   });
 
