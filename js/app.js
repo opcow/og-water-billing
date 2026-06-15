@@ -238,6 +238,26 @@ function goToNextPeriod() {
   updatePeriodNavButtons();
 }
 
+// The stack slide animation lives inside setupEvents (it closes over the carousel
+// DOM/gesture helpers), but creation flows in other top-level functions need it, so
+// setupEvents assigns it here once wired.
+let animateStackTo = null;
+
+// Animate from the sheet at fromIdx forward to the newest sheet, one slide at a
+// time (the "flipbook" effect when creating a sheet from an older one). Falls back
+// to an instant render if the animation isn't available or there's nothing to play.
+async function slideToNewest(fromIdx) {
+  const targetIdx = state.periods.length - 1;
+  if (!animateStackTo || fromIdx < 0 || fromIdx >= targetIdx) { render(); return; }
+  // Start from the sheet we were viewing, then step forward to the new one.
+  state.currentPeriodId = state.periods[fromIdx].id;
+  render();
+  for (let i = fromIdx; i < targetIdx; i++) {
+    await animateStackTo('next', '.15s');
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
 function setupEvents() {
   // Period picker popover
   document.getElementById('btn-period-picker').addEventListener('click', e => {
@@ -443,8 +463,9 @@ function setupEvents() {
   // Same stack animation, but triggered by the arrow buttons (no touch). Builds the
   // ghost, plays the slide from a standstill (a forced reflow makes the transition
   // run), then swaps the live pane — identical landing to a committed swipe.
-  // Returns a Promise that resolves when the animation completes.
-  function animateStackTo(dir) {
+  // Returns a Promise that resolves when the animation completes. Assigned to the
+  // module-level binding so creation flows can reuse it.
+  animateStackTo = function (dir, duration = '.45s') {
     return new Promise(resolve => {
       const idx = currentIdx();
       const neighbor = state.periods[dir === 'next' ? idx + 1 : idx - 1];
@@ -478,7 +499,7 @@ function setupEvents() {
         ghost.style.transform = `translateX(${width}px)`;
         ghost.classList.add('sheet-lift');
         void ghost.offsetWidth;                 // commit the start state
-        ghost.style.transition = 'transform .45s ease-out';
+        ghost.style.transition = `transform ${duration} ease-out`;
         ghost.style.transform = 'translateX(0)';
         onceSettled(ghost, () => { goToNextPeriod(); cleanup(); });
       } else {
@@ -490,12 +511,12 @@ function setupEvents() {
         periodView.style.transition = 'none';
         periodView.style.transform = 'translateX(0)';
         void periodView.offsetWidth;            // commit the start state
-        periodView.style.transition = 'transform .45s ease-out';
+        periodView.style.transition = `transform ${duration} ease-out`;
         periodView.style.transform = `translateX(${width}px)`;
         onceSettled(periodView, () => { goToPrevPeriod(); cleanup(); });
       }
     });
-  }
+  };
   document.getElementById('btn-period-prev').addEventListener('click', () => animateStackTo('prev'));
   document.getElementById('btn-period-next').addEventListener('click', () => animateStackTo('next'));
 
@@ -938,12 +959,13 @@ async function handleNewPeriod() {
   period.name             = name;
   period.accountsSnapshot = JSON.parse(JSON.stringify(state.accounts));
 
+  const fromIdx = state.periods.findIndex(p => p.id === state.currentPeriodId);
   const id = await db.savePeriod(period);
   period.id = id;
   state.periods.push(period);
   state.currentPeriodId = id;
   await setLocalDirty(true);
-  render();
+  await slideToNewest(fromIdx);
   await trimOldPeriods();
   syncToFile();
 }
@@ -982,7 +1004,7 @@ async function confirmPeriod() {
 
   const [y, m, d] = endStr.split('-').map(Number);
   const name = billing.monthLabel(new Date(y, m - 1, d));
-  const oldCurrentIdx = currentIdx();    // capture index before new period is added
+  const fromIdx = state.periods.findIndex(p => p.id === state.currentPeriodId);
   let period;
 
   if (_periodIsFirst) {
@@ -1028,19 +1050,10 @@ async function confirmPeriod() {
     updateLockReadingsButton();
   }
   closePeriodDialog();
-  // Animate to the new sheet. If we're not already on the latest, animate through
-  // all the sheets in between one by one (so you see the flipbook effect).
-  if (_periodIsFirst) {
-    render();
-  } else {
-    const targetIdx = state.periods.length - 1;  // new period index
-    state.currentPeriodId = state.periods[oldCurrentIdx].id;
-    render();
-    // Chain forward animations from old to new, one step at a time
-    for (let i = oldCurrentIdx; i < targetIdx; i++) {
-      await animateStackTo('next');
-    }
-  }
+  // Animate to the new sheet (flipbook through intermediates if on an older sheet).
+  // First sheet ever: nothing to animate from, just render.
+  if (_periodIsFirst) render();
+  else await slideToNewest(fromIdx);
   await trimOldPeriods();
   syncToFile();
 }
