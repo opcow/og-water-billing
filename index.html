@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=13330da5">
+  <link rel="stylesheet" href="css/styles.css?v=e091f007">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -56,7 +56,9 @@
       <button id="btn-first-period" class="btn btn-primary">Create First Sheet</button>
     </div>
 
-    <!-- Period view -->
+    <!-- Period view — wrapped in a viewport + track for the carousel swipe -->
+    <div id="period-viewport">
+    <div id="period-track">
     <div id="period-view" hidden>
 
       <div class="period-header">
@@ -101,6 +103,8 @@
         </table>
       </section>
 
+    </div>
+    </div>
     </div>
   </main>
 
@@ -255,6 +259,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=3a6e95d9"></script>
+  <script type="module" src="js/app.js?v=c11a90b9"></script>
 </body>
 </html>

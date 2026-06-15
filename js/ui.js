@@ -47,39 +47,65 @@ export function renderPeriodPopover(periods, selectedId, viewYear) {
 
 // ── Billing table ─────────────────────────────────────────────────────────────
 
-export function renderPeriod(period, accounts, masterMeter, sortConfig = { column: null, dir: 'asc' }, lockStartReadings = false, showMasterSection = true) {
-  const datesEl = document.getElementById('period-dates');
-  if (!period) {
-    datesEl.innerHTML = '';
-    document.getElementById('billing-body').innerHTML = '';
-    document.getElementById('billing-foot').innerHTML = '';
-    document.getElementById('master-section').hidden = true;
-    updateSortIndicators(sortConfig);
-    return;
-  }
+// Build the period's content as HTML strings (no DOM writes). Shared by the live
+// renderer and by buildGhost so a swipe's incoming neighbor matches exactly.
+export function renderPeriodHTML(period, accounts, masterMeter, sortConfig = { column: null, dir: 'asc' }, lockStartReadings = false, showMasterSection = true) {
+  if (!period) return { datesHTML: '', bodyHTML: '', footHTML: '', masterHTML: '', showMaster: false };
 
   const normBadge = period.normalizationFactor && period.normalizationFactor !== 1
     ? `<span class="prorated-badge">Prorated</span>`
     : '';
-  datesEl.innerHTML = `${formatDate(period.startDate)} – ${formatDate(period.endDate)}${normBadge}`;
+  const datesHTML = `${formatDate(period.startDate)} – ${formatDate(period.endDate)}${normBadge}`;
 
   const readMap = new Map((period.readings || []).map(r => [r.accountId, r]));
+  const sorted  = applySortConfig(accounts, period, readMap, sortConfig);
+  const bodyHTML = sorted.map(a => rowHTML(a, readMap.get(a.id), period, lockStartReadings)).join('');
+  const footHTML = totalsHTML(period, accounts, readMap);
 
-  const sorted = applySortConfig(accounts, period, readMap, sortConfig);
-  document.getElementById('billing-body').innerHTML =
-    sorted.map(a => rowHTML(a, readMap.get(a.id), period, lockStartReadings)).join('');
+  const showMaster = !!(showMasterSection && masterMeter);
+  const masterHTML = showMaster ? rowHTML(masterMeter, period.masterReading, period, lockStartReadings) : '';
 
-  renderTotals(period, accounts, readMap);
+  return { datesHTML, bodyHTML, footHTML, masterHTML, showMaster };
+}
+
+export function renderPeriod(period, accounts, masterMeter, sortConfig = { column: null, dir: 'asc' }, lockStartReadings = false, showMasterSection = true) {
+  const { datesHTML, bodyHTML, footHTML, masterHTML, showMaster } =
+    renderPeriodHTML(period, accounts, masterMeter, sortConfig, lockStartReadings, showMasterSection);
+
+  document.getElementById('period-dates').innerHTML = datesHTML;
+  document.getElementById('billing-body').innerHTML = bodyHTML;
+  document.getElementById('billing-foot').innerHTML = footHTML;
   updateSortIndicators(sortConfig);
 
   const masterSection = document.getElementById('master-section');
-  if (showMasterSection && masterMeter) {
-    masterSection.hidden = false;
-    document.getElementById('master-body').innerHTML =
-      rowHTML(masterMeter, period.masterReading, period, lockStartReadings);
-  } else {
-    masterSection.hidden = true;
+  masterSection.hidden = !showMaster;
+  if (showMaster) document.getElementById('master-body').innerHTML = masterHTML;
+}
+
+// A static, non-interactive snapshot of an adjacent period, cloned from the live
+// pane so structure/header/styling match. IDs are stripped so it can't collide
+// with the live pane's getElementById lookups. Removed after the swipe gesture.
+export function buildGhost(period, accounts, masterMeter, sortConfig, lockStartReadings, showMasterSection) {
+  const ghost = document.getElementById('period-view').cloneNode(true);
+  ghost.classList.add('period-ghost');
+  ghost.hidden = false;
+  ghost.removeAttribute('id');
+  ghost.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+
+  const { datesHTML, bodyHTML, footHTML, masterHTML, showMaster } =
+    renderPeriodHTML(period, accounts, masterMeter, sortConfig, lockStartReadings, showMasterSection);
+
+  ghost.querySelector('.period-dates').innerHTML = datesHTML;
+  const billingTable = ghost.querySelector('.billing-table');
+  billingTable.querySelector('tbody').innerHTML = bodyHTML;
+  billingTable.querySelector('tfoot').innerHTML = footHTML;
+
+  const masterSection = ghost.querySelector('.master-section');
+  if (masterSection) {
+    masterSection.hidden = !showMaster;
+    if (showMaster) masterSection.querySelector('tbody').innerHTML = masterHTML;
   }
+  return ghost;
 }
 
 function applySortConfig(list, period, readMap, { column, dir }) {
@@ -214,7 +240,7 @@ export function updateTotals(period, accounts) {
   renderTotals(period, accounts, readMap);
 }
 
-function renderTotals(period, nonMaster, readMap) {
+function totalsHTML(period, nonMaster, readMap) {
   let totalGal = 0, totalAmt = 0;
   const hasAny = nonMaster.length > 0;
   for (const a of nonMaster) {
@@ -223,7 +249,7 @@ function renderTotals(period, nonMaster, readMap) {
     totalAmt += accountAmount(a, g, period);
     if (!a.meterDefective) totalGal += g ?? 0;
   }
-  document.getElementById('billing-foot').innerHTML = `
+  return `
     <tr class="totals-row">
       <td><strong>Total</strong></td>
       <td class="col-start"></td>

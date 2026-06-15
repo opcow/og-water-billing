@@ -194,8 +194,15 @@ body {
   padding: 24px 20px;
   max-width: 640px;
   margin: 0 auto;
-  overflow-x: hidden; /* contain the dragged sheet so the gesture doesn't create a horizontal scrollbar */
 }
+
+/* ── Period carousel ─────────────────────────────────────────────────────── */
+/* Viewport clips; track holds the live pane plus a transient ghost neighbor
+   during a swipe and is translated with the finger. */
+#period-viewport { overflow: hidden; }
+#period-track    { display: flex; will-change: transform; }
+#period-track > * { flex: 0 0 100%; width: 100%; }
+#period-track > .period-ghost { pointer-events: none; user-select: none; }
 
 /* ── Period dates ────────────────────────────────────────────────────────── */
 

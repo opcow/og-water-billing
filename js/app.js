@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=df952e74';
 import * as billing from './billing.js?v=1ca74bc0';
-import * as ui      from './ui.js?v=a81bf605';
+import * as ui      from './ui.js?v=c05c386d';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -268,16 +268,12 @@ function setupEvents() {
   document.getElementById('popover-month-grid').addEventListener('click', e => {
     const btn = e.target.closest('.popover-month');
     if (!btn || !btn.dataset.periodId) return;
-    const newId = Number(btn.dataset.periodId);
-    const oldIdx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-    const newIdx = state.periods.findIndex(p => p.id === newId);
-    state.currentPeriodId = newId;
+    state.currentPeriodId = Number(btn.dataset.periodId);
     undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
     document.getElementById('period-popover').hidden = true;
     ui.renderPeriodPicker(state.periods, state.currentPeriodId);
     ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
     updatePeriodNavButtons();
-    if (newIdx !== oldIdx) animatePeriodChange(newIdx > oldIdx ? 'next' : 'prev');
   });
 
   document.addEventListener('click', e => {
@@ -287,90 +283,136 @@ function setupEvents() {
     if (!popover.contains(e.target)) popover.hidden = true;
   });
 
-  // Interactive sheet drag: finger follows the view, snaps on release.
-  // Prevents vertical scroll during horizontal drag.
-  let touchStartX = 0, touchStartY = 0, isHorizontalDrag = false;
-  const periodView = document.getElementById('period-view');
+  // ── Carousel swipe between sheets ───────────────────────────────────────────
+  // The track holds the live pane plus a transient "ghost" of the neighbor during
+  // a drag. On a committed swipe the live pane is re-rendered to that neighbor and
+  // the ghost removed with transitions disabled, so it lands seamlessly with no
+  // snap-back. Only the first/last sheet rubber-bands back (the "no more" cue).
+  const periodViewport = document.getElementById('period-viewport');
+  const periodTrack    = document.getElementById('period-track');
+  const periodView     = document.getElementById('period-view');
+  const reduceMotion   = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  periodView.addEventListener('touchstart', e => {
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    isHorizontalDrag = false;
-    periodView.style.transition = 'none';
-  });
+  let gesture = null; // active gesture state, or null when idle
 
-  periodView.addEventListener('touchmove', e => {
-    const dx = touchStartX - e.touches[0].clientX;
-    const dy = touchStartY - e.touches[0].clientY;
+  const currentIdx = () => state.periods.findIndex(p => p.id === state.currentPeriodId);
 
-    // Detect horizontal drag; once committed, suppress vertical scroll
-    if (!isHorizontalDrag) {
-      if (Math.abs(dx) > 8) {
-        isHorizontalDrag = true;
-        e.preventDefault();
-      } else if (Math.abs(dy) > 8) {
-        // Vertical drag — let it scroll normally
-        return;
-      }
-    }
-
-    if (isHorizontalDrag) {
-      e.preventDefault();
-      periodView.style.transform = `translateX(${-dx}px)`;
-    }
-  });
-
-  // Debug overlay for touch drag
-  const debugEl = document.createElement('div');
-  debugEl.id = 'drag-debug';
-  debugEl.style.cssText = 'position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.8);color:#0f0;font:12px monospace;padding:8px;z-index:9999;max-width:150px;word-wrap:break-word';
-  document.body.appendChild(debugEl);
-
-  function updateDebug(msg) {
-    debugEl.textContent = msg;
-    setTimeout(() => { debugEl.textContent = ''; }, 2000);
+  // Run cb once on the track's transform transition end, with a timeout fallback
+  // in case transitionend doesn't fire (e.g. value didn't actually change).
+  function onceSettled(cb) {
+    let done = false;
+    const run = () => {
+      if (done) return;
+      done = true;
+      periodTrack.removeEventListener('transitionend', handler);
+      cb();
+    };
+    const handler = ev => {
+      if (ev.target === periodTrack && ev.propertyName === 'transform') run();
+    };
+    periodTrack.addEventListener('transitionend', handler);
+    setTimeout(run, 350);
   }
 
-  periodView.addEventListener('touchend', e => {
-    if (!isHorizontalDrag) return;
+  periodViewport.addEventListener('touchstart', e => {
+    if (gesture && gesture.animating) return; // ignore during a settle animation
+    gesture = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      horizontal: false,
+      dir: null,           // 'next' | 'prev'
+      ghost: null,
+      baseline: 0,         // px transform that shows the live pane
+      atEdge: false,
+      animating: false,
+      width: periodViewport.clientWidth,
+    };
+    periodTrack.style.transition = 'none';
+  });
 
-    const dx = touchStartX - e.changedTouches[0].clientX;
-    const threshold = 30;
-    const didDragLeft = dx > threshold;
-    const didDragRight = dx < -threshold;
+  periodViewport.addEventListener('touchmove', e => {
+    const g = gesture;
+    if (!g || g.animating) return;
+    const dx = g.startX - e.touches[0].clientX;
+    const dy = g.startY - e.touches[0].clientY;
 
-    updateDebug(`dx=${dx.toFixed(0)} left=${didDragLeft} right=${didDragRight}`);
-
-    // Determine navigation direction and perform it
-    if (didDragLeft) {
-      const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-      if (idx >= 0 && idx < state.periods.length - 1) {
-        updateDebug(`→ next`);
-        goToNextPeriod();
-        // Reset with smooth animation after nav
-        periodView.style.transition = 'transform 0.2s ease-out';
-        periodView.style.transform = 'translateX(0)';
+    if (!g.horizontal) {
+      if (Math.abs(dx) > 8) {
+        g.horizontal = true;
+        // Decide direction and prepare the incoming neighbor once.
+        const idx = currentIdx();
+        g.dir = dx > 0 ? 'next' : 'prev';
+        const neighbor = state.periods[g.dir === 'next' ? idx + 1 : idx - 1];
+        if (neighbor && !reduceMotion.matches) {
+          g.ghost = ui.buildGhost(neighbor, accountsFor(neighbor), state.masterMeter,
+            state.sortConfig, state.lockStartReadings, state.showMasterSection);
+          if (g.dir === 'next') {
+            periodTrack.appendChild(g.ghost);          // neighbor on the right
+            g.baseline = 0;
+          } else {
+            periodTrack.insertBefore(g.ghost, periodView); // neighbor on the left
+            g.baseline = -g.width;
+            periodTrack.style.transform = `translateX(${g.baseline}px)`;
+          }
+        } else {
+          g.atEdge = !neighbor; // first/last sheet → rubber-band
+        }
+      } else if (Math.abs(dy) > 8) {
+        gesture = null;         // vertical scroll — abandon the gesture
+        return;
       } else {
-        updateDebug(`→ at end`);
-        periodView.style.transition = 'transform 0.2s ease-out';
-        periodView.style.transform = 'translateX(0)';
+        return;                 // direction not yet decided
       }
-    } else if (didDragRight) {
-      const idx = state.periods.findIndex(p => p.id === state.currentPeriodId);
-      if (idx > 0) {
-        updateDebug(`← prev`);
-        goToPrevPeriod();
-        periodView.style.transition = 'transform 0.2s ease-out';
-        periodView.style.transform = 'translateX(0)';
-      } else {
-        updateDebug(`← at start`);
-        periodView.style.transition = 'transform 0.2s ease-out';
-        periodView.style.transform = 'translateX(0)';
+    }
+
+    e.preventDefault();         // committed horizontal — block vertical scroll
+    if (reduceMotion.matches) return;
+    const move = g.atEdge ? -dx * 0.35 : g.baseline - dx;
+    periodTrack.style.transform = `translateX(${move}px)`;
+  }, { passive: false });
+
+  periodViewport.addEventListener('touchend', e => {
+    const g = gesture;
+    if (!g || !g.horizontal) { gesture = null; return; }
+
+    const dx = g.startX - e.changedTouches[0].clientX;
+    const threshold = Math.max(60, g.width * 0.15);
+
+    // Reduced motion: no ghost/slide — just navigate instantly if past threshold.
+    if (reduceMotion.matches) {
+      const idx = currentIdx();
+      const neighbor = state.periods[dx > 0 ? idx + 1 : idx - 1];
+      if (Math.abs(dx) > threshold && neighbor) {
+        if (dx > 0) goToNextPeriod(); else goToPrevPeriod();
       }
+      gesture = null;
+      return;
+    }
+
+    periodTrack.style.transition = 'transform .25s ease-out';
+
+    if (g.ghost && Math.abs(dx) > threshold) {
+      // Committed: finish sliding the ghost to center, then swap the live pane to
+      // that sheet and drop the ghost with transitions off — seamless landing.
+      g.animating = true;
+      periodTrack.style.transform = `translateX(${g.dir === 'next' ? -g.width : 0}px)`;
+      onceSettled(() => {
+        if (g.dir === 'next') goToNextPeriod(); else goToPrevPeriod();
+        g.ghost.remove();
+        periodTrack.style.transition = 'none';
+        periodTrack.style.transform = '';
+        gesture = null;
+      });
     } else {
-      updateDebug(`↔ short drag`);
-      periodView.style.transition = 'transform 0.2s ease-out';
-      periodView.style.transform = 'translateX(0)';
+      // Spring back to the live pane.
+      g.animating = true;
+      periodTrack.style.transform = `translateX(${g.baseline}px)`;
+      onceSettled(() => {
+        if (g.ghost) g.ghost.remove();
+        periodTrack.style.transition = 'none';
+        periodTrack.style.transform = '';
+        gesture = null;
+      });
     }
   });
 
