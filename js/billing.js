@@ -123,7 +123,7 @@ export function formatCurrency(n) {
 export function formatDate(dateStr) {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function formatNumber(n) {

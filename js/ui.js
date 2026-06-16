@@ -1,4 +1,4 @@
-import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=1ca74bc0';
+import { calcBill, getGallons, formatCurrency, formatDate, formatNumber, DEFAULT_SMS_TEMPLATE } from './billing.js?v=a53e87cc';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -92,10 +92,11 @@ export function buildGhost(period, accounts, masterMeter, sortConfig, lockStartR
   ghost.removeAttribute('id');
   ghost.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
 
-  const { datesHTML, bodyHTML, footHTML, masterHTML, showMaster } =
+  const { bodyHTML, footHTML, masterHTML, showMaster } =
     renderPeriodHTML(period, accounts, masterMeter, sortConfig, lockStartReadings, showMasterSection);
 
-  ghost.querySelector('.period-dates').innerHTML = datesHTML;
+  // The header (incl. .period-dates) is now fixed outside #period-view, so the
+  // ghost clone has none — only the table/master content slides.
   const billingTable = ghost.querySelector('.billing-table');
   billingTable.querySelector('tbody').innerHTML = bodyHTML;
   billingTable.querySelector('tfoot').innerHTML = footHTML;

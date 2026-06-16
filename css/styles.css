@@ -232,17 +232,17 @@ html.dark .sheet-lift { box-shadow: -16px 0 28px -6px rgba(0, 0, 0, .7); }
 
 .period-nav {
   display: flex;
-  gap: 2px;
+  gap: 8px;
 }
-.period-nav .btn-icon {
-  color: var(--text);
-  font-size: 20px;
-  font-weight: 700;
-  padding: 2px 6px;
+.btn-period-nav {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
 }
-.period-nav .btn-icon:disabled {
-  color: var(--border);
+.btn-period-nav:disabled {
+  opacity: 0.45;
   cursor: default;
+  filter: none;
 }
 
 .period-dates {
@@ -710,6 +710,9 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
   }
 
   .app-main { padding: 12px; }
+
+  /* Trim nav buttons so they don't crowd the header on narrow screens */
+  .btn-period-nav { padding: 8px 12px; }
 
   /* Hide the Prev column; squeeze the others so Gal fits */
   .billing-table .col-start { display: none; }

@@ -8,7 +8,7 @@
   <title>Water Billing</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/styles.css?v=abc7ecab">
+  <link rel="stylesheet" href="css/styles.css?v=2899e314">
   <script>if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');</script>
 </head>
 <body>
@@ -58,13 +58,12 @@
 
     <!-- Period view — wrapped in a viewport + track for the carousel swipe -->
     <div id="period-viewport">
-    <div id="period-track">
-    <div id="period-view" hidden>
 
-      <div class="period-header">
+      <!-- Header stays fixed above the sliding sheets; not part of the swipe pane. -->
+      <div class="period-header" id="period-header" hidden>
         <div class="period-nav no-print">
-          <button id="btn-period-prev" class="btn btn-icon" title="Previous sheet">‹</button>
-          <button id="btn-period-next" class="btn btn-icon" title="Next sheet">›</button>
+          <button id="btn-period-prev" class="btn btn-secondary btn-period-nav" title="Previous sheet">‹ Prev</button>
+          <button id="btn-period-next" class="btn btn-secondary btn-period-nav" title="Next sheet">Next ›</button>
         </div>
         <p id="period-dates" class="period-dates"></p>
         <div id="undo-toolbar" class="undo-toolbar no-print">
@@ -72,6 +71,9 @@
           <button id="btn-redo" class="btn btn-undo-redo" title="Redo (Ctrl+Y)" disabled>↪</button>
         </div>
       </div>
+
+    <div id="period-track">
+    <div id="period-view" hidden>
 
       <table class="billing-table" id="billing-table">
         <thead>
@@ -274,6 +276,6 @@
 
   <script src="js/vendor/xlsx.full.min.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
-  <script type="module" src="js/app.js?v=5b98a958"></script>
+  <script type="module" src="js/app.js?v=bb5f055f"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 import * as db      from './db.js?v=df952e74';
-import * as billing from './billing.js?v=1ca74bc0';
-import * as ui      from './ui.js?v=a8fc934b';
+import * as billing from './billing.js?v=a53e87cc';
+import * as ui      from './ui.js?v=2ac78de0';
 
 const SYNC_URL = 'https://water-billing-sync.opcow.workers.dev';
 
@@ -194,6 +194,7 @@ function updateLockReadingsButton() {
 function render() {
   const hasPeriods = state.periods.length > 0;
   document.getElementById('empty-state').hidden  = hasPeriods;
+  document.getElementById('period-header').hidden = !hasPeriods;
   document.getElementById('period-view').hidden  = !hasPeriods;
   document.getElementById('btn-prorate').hidden     = !hasPeriods;
   document.getElementById('btn-print').hidden         = !hasPeriods;
@@ -258,6 +259,27 @@ async function slideToNewest(fromIdx) {
   }
 }
 
+// Flip page-by-page from the current sheet to the one with targetId, animating each
+// intermediate step (the "flipbook" effect), in whichever direction is needed. Falls
+// back to an instant jump when animation isn't available or we're already there.
+async function slideToPeriod(targetId) {
+  const targetIdx = state.periods.findIndex(p => p.id === targetId);
+  const fromIdx   = state.periods.findIndex(p => p.id === state.currentPeriodId);
+  if (targetIdx < 0) return;
+  if (!animateStackTo || fromIdx < 0 || fromIdx === targetIdx) {
+    state.currentPeriodId = targetId;
+    undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
+    render();
+    return;
+  }
+  const dir   = targetIdx > fromIdx ? 'next' : 'prev';
+  const steps = Math.abs(targetIdx - fromIdx);
+  for (let i = 0; i < steps; i++) {
+    await animateStackTo(dir, '.15s');
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
 function setupEvents() {
   // Period picker popover
   document.getElementById('btn-period-picker').addEventListener('click', e => {
@@ -288,12 +310,8 @@ function setupEvents() {
   document.getElementById('popover-month-grid').addEventListener('click', e => {
     const btn = e.target.closest('.popover-month');
     if (!btn || !btn.dataset.periodId) return;
-    state.currentPeriodId = Number(btn.dataset.periodId);
-    undoHistory.length = 0; redoStack.length = 0; updateUndoButtons();
     document.getElementById('period-popover').hidden = true;
-    ui.renderPeriodPicker(state.periods, state.currentPeriodId);
-    ui.renderPeriod(state.currentPeriod, accountsFor(state.currentPeriod), state.masterMeter, state.sortConfig, state.lockStartReadings, state.showMasterSection);
-    updatePeriodNavButtons();
+    slideToPeriod(Number(btn.dataset.periodId));   // flipbook to the chosen month
   });
 
   document.addEventListener('click', e => {
@@ -361,6 +379,7 @@ function setupEvents() {
     if (!g.horizontal) {
       if (Math.abs(dx) > 8) {
         g.horizontal = true;
+        closeMenus();   // a swipe dismisses any open popup/menu
         // Decide direction and prepare the neighbor + mover once.
         const idx = currentIdx();
         g.dir = dx > 0 ? 'next' : 'prev';
@@ -913,6 +932,7 @@ async function trimOldPeriods() {
 // ── New period ────────────────────────────────────────────────────────────────
 
 async function handleNewPeriod() {
+  document.getElementById('period-popover').hidden = true;   // dismiss the picker
   const latest = state.periods[state.periods.length - 1];
   if (!latest) return;
 
@@ -935,6 +955,7 @@ async function handleNewPeriod() {
 
   const fromIdx = state.periods.findIndex(p => p.id === state.currentPeriodId);
   const id = await db.savePeriod(period);
+  await clearTombstone(period.name);
   period.id = id;
   state.periods.push(period);
   state.currentPeriodId = id;
@@ -950,6 +971,7 @@ async function handleDeletePeriod() {
   if (!confirm(`Delete the "${period.name}" period? This cannot be undone.`)) return;
 
   await db.deletePeriod(period.id);
+  await recordTombstone(period.name);
   state.periods = state.periods.filter(p => p.id !== period.id);
   state.currentPeriodId = state.periods.length ? state.periods[state.periods.length - 1].id : null;
   await setLocalDirty(true);
@@ -1015,6 +1037,7 @@ async function confirmPeriod() {
   }
 
   const id = await db.savePeriod(period);
+  await clearTombstone(period.name);
   period.id = id;
   state.periods.push(period);
   state.currentPeriodId = id;
@@ -1164,6 +1187,12 @@ function openSmsDialog(accountId) {
 
   dialog.showModal();
   if (!account.phone) phoneInput.focus();
+}
+
+// Close any transient popups/menus (sheet picker, start-readings menu).
+function closeMenus() {
+  document.getElementById('period-popover').hidden = true;
+  document.getElementById('start-menu').hidden = true;
 }
 
 function showStartMenu(cell) {
@@ -1488,6 +1517,61 @@ async function pickAndRestoreBackup() {
 // with a newer endReadingAt win. With keepOtherOnly, periods that exist only
 // in otherPeriods are appended — used on pull so sheets created locally but
 // not yet pushed aren't wiped by the remote's structure.
+// ── Deletion tombstones ───────────────────────────────────────────────────────
+// Periods are merged by name and the union of both sides is kept, so a plain
+// delete is undone the moment another client (which still has the sheet) syncs:
+// the sheet reappears and gets pushed back to everyone. Tombstones record an
+// intentional deletion (by period name + when) so the deletion propagates and
+// suppresses resurrection across clients.
+
+function getTombstones() {
+  return db.getConfig('deletedPeriods').then(t => t || []);
+}
+
+// Union by name; newest deletedAt wins.
+function mergeTombstones(a = [], b = []) {
+  const map = new Map();
+  for (const t of [...a, ...b]) {
+    if (!t?.name) continue;
+    const prev = map.get(t.name);
+    if (!prev || (t.deletedAt ?? 0) > (prev.deletedAt ?? 0)) {
+      map.set(t.name, { name: t.name, deletedAt: t.deletedAt ?? 0 });
+    }
+  }
+  return [...map.values()];
+}
+
+// Newest moment any reading in the period was recorded (0 if none).
+function periodActivityTime(period) {
+  let t = period.masterReading?.endReadingAt ?? 0;
+  for (const r of period.readings || []) t = Math.max(t, r.endReadingAt ?? 0);
+  return t;
+}
+
+// Drop periods suppressed by a tombstone, unless the period was edited after the
+// deletion (a genuine concurrent edit wins over the delete and resurrects it).
+function applyTombstones(periods, tombstones) {
+  if (!tombstones.length) return periods;
+  const tomb = new Map(tombstones.map(t => [t.name, t.deletedAt ?? 0]));
+  return periods.filter(p => {
+    const deletedAt = tomb.get(p.name);
+    if (deletedAt == null) return true;
+    return periodActivityTime(p) > deletedAt;
+  });
+}
+
+async function recordTombstone(name) {
+  const merged = mergeTombstones(await getTombstones(), [{ name, deletedAt: Date.now() }]);
+  await db.setConfig('deletedPeriods', merged);
+}
+
+// Recreating a sheet with a tombstoned name clears the tombstone so it syncs again.
+async function clearTombstone(name) {
+  const existing = await getTombstones();
+  const filtered = existing.filter(t => t.name !== name);
+  if (filtered.length !== existing.length) await db.setConfig('deletedPeriods', filtered);
+}
+
 function mergeReadings(basePeriods, otherPeriods, { keepOtherOnly = false } = {}) {
   const otherMap = new Map(otherPeriods.map(p => [p.name, p]));
   let hadNewer = false;
@@ -1528,13 +1612,16 @@ function mergeReadings(basePeriods, otherPeriods, { keepOtherOnly = false } = {}
 }
 
 async function buildBackupData() {
-  const [accounts, periods, masterMeter, rateTable] = await Promise.all([
-    db.getAccounts(), db.getPeriods(), db.getConfig('masterMeter'), db.getConfig('rateTable'),
+  const [accounts, periods, masterMeter, rateTable, deletedPeriods] = await Promise.all([
+    db.getAccounts(), db.getPeriods(), db.getConfig('masterMeter'), db.getConfig('rateTable'), getTombstones(),
   ]);
-  return { version: 1, exportedAt: new Date().toISOString(), masterMeter, rateTable, accounts, periods };
+  return { version: 1, exportedAt: new Date().toISOString(), masterMeter, rateTable, accounts, periods, deletedPeriods };
 }
 
-async function applyBackupData(data) {
+// syncMerge=true (sync pull): union incoming tombstones with local and suppress
+// any resurrected sheets. syncMerge=false (explicit file restore/import): treat
+// the backup as authoritative — its tombstones replace local ones, no filtering.
+async function applyBackupData(data, { syncMerge = false } = {}) {
   if (!data.version || !Array.isArray(data.accounts) || !Array.isArray(data.periods))
     throw new Error('Invalid backup file');
   const rateTable         = data.config?.rateTable ?? data.rateTable;
@@ -1543,8 +1630,13 @@ async function applyBackupData(data) {
   if (rateTable) await db.setConfig('rateTable', rateTable);
   if (masterMeter) await db.setConfig('masterMeter', masterMeter);
 
+  const tombstones = syncMerge
+    ? mergeTombstones(await getTombstones(), data.deletedPeriods || [])
+    : (data.deletedPeriods || []);
+  await db.setConfig('deletedPeriods', tombstones);
+
   const accounts = data.accounts.filter(a => !a.isMaster);
-  const periods = data.periods.map(p => {
+  let periods = data.periods.map(p => {
     const masterAcctId = data.accounts.find(a => a.isMaster)?.id;
     if (masterAcctId && !p.masterReading) {
       const masterReading = p.readings?.find(r => r.accountId === masterAcctId);
@@ -1555,6 +1647,7 @@ async function applyBackupData(data) {
     }
     return p;
   });
+  if (syncMerge) periods = applyTombstones(periods, tombstones);
 
   await db.replaceAllAccounts(accounts);
   await db.replaceAllPeriods(periods);
@@ -1655,23 +1748,32 @@ async function githubSync(isAuto = false) {
         // Pull: accept remote structure, but keep newer local readings and
         // local-only sheets. Strip period ids before the rewrite — remote ids
         // and local-only ids can collide, so let IndexedDB assign fresh ones.
+        // A local deletion the remote hasn't seen yet must be pushed back even
+        // when there are no newer readings, or it would never propagate.
+        const localTombs  = await getTombstones();
+        const remoteTombs = remoteData.deletedPeriods || [];
+        const localHasNewTombs = localTombs.some(lt =>
+          !remoteTombs.some(rt => rt.name === lt.name && (rt.deletedAt ?? 0) >= (lt.deletedAt ?? 0)));
+
         const { merged, hadNewer } = mergeReadings(remoteData.periods || [], state.periods, { keepOtherOnly: true });
         remoteData.periods = merged.map(({ id, ...rest }) => rest);
-        await applyBackupData(remoteData);
+        await applyBackupData(remoteData, { syncMerge: true });
         await reloadStateFromDB();
         await setLocalDirty(false);
         render();
         await db.setConfig('lastGithubSync', remoteData.exportedAt);
 
-        // If local had newer readings or extra sheets, push the merged result back
-        if (hadNewer) await pushLocal(cfg.key, remoteSha);
+        // If local had newer readings, extra sheets, or unpushed deletions, push back
+        if (hadNewer || localHasNewTombs) await pushLocal(cfg.key, remoteSha);
       } else if (state.localDirty) {
-        // Push: merge any newer remote readings into local first, then send
+        // Push: merge any newer remote readings into local first, union both
+        // sides' deletions, then suppress any sheet either side deleted.
         const { merged, hadNewer } = mergeReadings(state.periods, remoteData.periods || []);
-        if (hadNewer) {
-          await db.replaceAllPeriods(merged);
-          state.periods = await db.getPeriods();
-        }
+        const tombstones = mergeTombstones(await getTombstones(), remoteData.deletedPeriods || []);
+        await db.setConfig('deletedPeriods', tombstones);
+        const filtered = applyTombstones(hadNewer ? merged : state.periods, tombstones);
+        await db.replaceAllPeriods(filtered);
+        state.periods = await db.getPeriods();
         await pushLocal(cfg.key, remoteSha);
       }
     } else if (res.status === 404) {
